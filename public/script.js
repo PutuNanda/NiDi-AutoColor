@@ -58,6 +58,9 @@
   let photoWidth = 0;
   let photoHeight = 0;
   let zoomLevel = 1;
+  let panX = 0;
+  let panY = 0;
+  let panStart = null;
   let selectedCurveChannel = 'master';
   let selectedHslBand = 'red';
 
@@ -307,6 +310,8 @@
   }
   function fitCanvasToViewport() {
     if (!imageId || !photoWidth || !photoHeight) return;
+    const oldWidth = dropZone.clientWidth;
+    const oldHeight = dropZone.clientHeight;
     const workspace = $('.workspace');
     const style = getComputedStyle(workspace);
     const horizontalPadding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
@@ -324,17 +329,26 @@
     dropZone.style.width = `${Math.round(width)}px`;
     dropZone.style.height = `${Math.round(height)}px`;
     dropZone.style.aspectRatio = `${photoWidth} / ${photoHeight}`;
+    if (oldWidth && oldHeight) { panX *= width / oldWidth; panY *= height / oldHeight; }
+    updatePreviewTransform();
   }
   function setZoom(value, event) {
-    zoomLevel = Math.max(.25, Math.min(5, value));
+    const nextZoom = Math.max(.25, Math.min(5, value));
     if (event) {
       const rect = dropZone.getBoundingClientRect();
-      const x = Math.max(0, Math.min(100, (event.clientX - rect.left) / rect.width * 100));
-      const y = Math.max(0, Math.min(100, (event.clientY - rect.top) / rect.height * 100));
-      preview.style.transformOrigin = `${x}% ${y}%`;
-    } else preview.style.transformOrigin = '50% 50%';
-    preview.style.transform = `scale(${zoomLevel})`;
+      const x = event.clientX - rect.left - rect.width / 2;
+      const y = event.clientY - rect.top - rect.height / 2;
+      const factor = nextZoom / zoomLevel;
+      panX = x + (panX - x) * factor;
+      panY = y + (panY - y) * factor;
+    } else { panX = 0; panY = 0; }
+    zoomLevel = nextZoom;
+    updatePreviewTransform();
     zoomIndicator.querySelector('strong').textContent = `${Math.round(zoomLevel * 100)}%`;
+  }
+  function updatePreviewTransform() {
+    preview.style.transformOrigin = '50% 50%';
+    preview.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
   }
   function queuePreview(delay = 130) {
     if (!imageId || isComparing) return;
@@ -455,6 +469,31 @@
     event.preventDefault();
     setZoom(zoomLevel * (event.deltaY < 0 ? 1.12 : 1 / 1.12), event);
   }, { passive: false });
+  preview.addEventListener('dragstart', event => event.preventDefault());
+  dropZone.addEventListener('pointerdown', event => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!imageId || event.button !== 0 || target?.closest('#zoom-indicator, #drop-overlay, #preview-loading')) return;
+    event.preventDefault();
+    panStart = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, panX, panY };
+    dropZone.classList.add('is-panning');
+    dropZone.setPointerCapture(event.pointerId);
+  });
+  dropZone.addEventListener('pointermove', event => {
+    if (!panStart || event.pointerId !== panStart.pointerId) return;
+    const rect = dropZone.getBoundingClientRect();
+    const maxX = Math.max(48, rect.width * (zoomLevel - 1) / 2);
+    const maxY = Math.max(48, rect.height * (zoomLevel - 1) / 2);
+    panX = Math.max(-maxX, Math.min(maxX, panStart.panX + event.clientX - panStart.x));
+    panY = Math.max(-maxY, Math.min(maxY, panStart.panY + event.clientY - panStart.y));
+    updatePreviewTransform();
+  });
+  const stopPanning = event => {
+    if (panStart && (!event || event.pointerId === panStart.pointerId)) {
+      panStart = null; dropZone.classList.remove('is-panning');
+    }
+  };
+  dropZone.addEventListener('pointerup', stopPanning);
+  dropZone.addEventListener('pointercancel', stopPanning);
   window.addEventListener('resize', fitCanvasToViewport);
   document.addEventListener('dragover', event => event.preventDefault());
   document.addEventListener('drop', event => event.preventDefault());

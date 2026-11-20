@@ -55,7 +55,9 @@ body, .workspace { background: #121420; color: #f0f0f5; }
   transform: scale(1);
   transform-origin: 50% 50%;
 }
-.photo-stage.has-image { min-height: 0; max-width: 100%; flex: none; align-self: center; }
+.photo-stage.has-image { min-height: 0; max-width: 100%; flex: none; align-self: center; cursor: grab; touch-action: none; }
+.photo-stage.has-image.is-panning { cursor: grabbing; }
+.photo-stage.has-image #photo-preview { user-select: none; -webkit-user-drag: none; }
 .zoom-indicator {
   position: absolute;
   z-index: 3;
