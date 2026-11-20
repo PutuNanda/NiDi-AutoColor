@@ -1,0 +1,103 @@
+:root {
+  color-scheme: dark;
+  --bg: #121420;
+  --panel: #1c1e30;
+  --line: #2e3149;
+  --text: #f0f0f5;
+  --muted: #9699b1;
+  --lime: #9584ff;
+}
+
+body, .workspace { background: #121420; color: #f0f0f5; }
+.topbar, .edit-panel { background: #151726; }
+.topbar, .edit-panel, .tab-list, .panel-bottom { border-color: #2e3149; }
+.photo-stage {
+  border-color: #343751;
+  border-radius: 12px;
+  background: radial-gradient(ellipse at 50% 42%, #23263b 0%, #1a1c2d 60%, #151726 100%);
+}
+.photo-stage:before {
+  opacity: .13;
+  background-image: linear-gradient(#8b8eaa20 1px, transparent 1px), linear-gradient(90deg, #8b8eaa20 1px, transparent 1px);
+}
+.brand-mark i { background: linear-gradient(135deg, #7b61ff, #b06ab3); }
+.status-light, .meta-dot { background: #a99aff; box-shadow: 0 0 11px #9584ff55; }
+.meta-dot { background: #767a98; box-shadow: none; }
+.server-badge { color: #c0b8ff; border-color: #494365; background: #7b61ff12; }
+.button { border-radius: 8px; }
+.button-primary {
+  color: #fff;
+  background: #7b61ff;
+  box-shadow: 0 4px 15px #7b61ff35;
+}
+.button-primary:hover:not(:disabled) { background: #8b76ff; }
+.button-quiet, .format-select, .compare-button {
+  color: #c4c5d5;
+  background: #1c1e30;
+  border-color: #383b56;
+  border-radius: 8px;
+}
+.button-quiet:hover:not(:disabled), .compare-button:hover:not(:disabled) {
+  color: #f0f0f5;
+  background: #2a2d45;
+  border-color: #555071;
+}
+.compare-button.is-active { color: #c5bbff; border-color: #8170d7; }
+.photo-meta { color: #d1d2df; }
+.dimension-label, .render-status, .workspace-footer, .format-hint { color: #898ca5; }
+.workspace-footer > span:last-child { color: #777b98; }
+.render-status.is-working { color: #b6aaff; }
+.empty-eyebrow, .section-index { color: #a99aff; }
+.section-kicker { color: #8f91ab; }
+.empty-state h1 em { color: #c5bbff; }
+.empty-description, .panel-intro { color: #a0a2b8; }
+.upload-glow { background: #9584ff30; }
+.upload-frame { border-color: #7166a4; background: #23243a; }
+.upload-frame:after { border-color: #45415f; }
+.sun { background: #c5bbff; box-shadow: 0 0 11px #c5bbff65; }
+.mountain { border-bottom-color: #6a5aa9; }
+.mountain-back { border-bottom-color: #897bd0; }
+.upload-plus { background: #9584ff; color: #fff; }
+.drop-overlay { border-color: #9584ff; background: #1b1a30ee; border-radius: 10px; }
+.drop-overlay strong { color: #d0c9ff; }
+.drop-overlay span { color: #aaa6c5; }
+.photo-stage.is-dragging { border-color: #9584ff; }
+.server-lock { color: #a99aff; }
+.panel-heading h2 { color: #f0f0f5; }
+.reset-button, .text-button { color: #aaaac0; }
+.reset-button:hover:not(:disabled), .text-button:hover { color: #c3baff; }
+.tab-button { color: #9699b1; }
+.tab-button:hover { color: #e2e0f3; }
+.tab-button.is-active { color: #b6aaff; }
+.tab-button.is-active:after { background: #9584ff; }
+.panel-section { border-color: #2e3149; }
+.section-note, .control-label { color: #a0a2b8; }
+.control-value { color: #d0d0df; }
+.range::-webkit-slider-runnable-track { background: linear-gradient(to right, #9584ff var(--fill), #41435e var(--fill)); }
+.range::-moz-range-track { background: #41435e; }
+.range::-moz-range-progress { background: #9584ff; }
+.range::-webkit-slider-thumb { border-color: #b6aaff; background: #24243a; }
+.range::-moz-range-thumb { border-color: #b6aaff; background: #24243a; }
+.hsl-band, .wheel-card, .curve-frame {
+  background: #202238;
+  border-color: #383b56;
+  border-radius: 9px;
+}
+.hsl-band summary { color: #d0d1df; }
+.hsl-band summary:after { color: #a19bbf; }
+.hsl-sliders .control-label, .wheel-adjustments .control-label { color: #a0a2b8; }
+.curve-grid path { stroke: #383b56; }
+.curve-grid .curve-diagonal { stroke: #6b668c; }
+.curve-frame polyline { stroke: #a99aff; }
+.curve-point { fill: #26263d; stroke: #b6aaff; }
+.curve-point:focus { fill: #b6aaff; }
+.curve-axis, .wheel-tonal { color: #9699b1; }
+.color-wheel { box-shadow: 0 0 0 4px #25273e, 0 0 0 5px #494766; }
+.wheel-marker { background: #28283f; }
+.bottom-mark { color: #b6aaff; border-color: #625b91; }
+.bottom-version { color: #83859e; }
+.toast { color: #e1dcff; border-color: #5b518f; background: #25213d; }
+
+@media (max-width: 700px) {
+  .photo-stage { border-radius: 10px; }
+}
