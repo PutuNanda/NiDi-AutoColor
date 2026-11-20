@@ -1,0 +1,13 @@
+{
+  "name": "nidi-autocolor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Editor foto dengan pemrosesan gambar di server.",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "sharp": "^0.34.5"
+  }
+}

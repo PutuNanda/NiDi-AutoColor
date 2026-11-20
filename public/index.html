@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10120f">
+  <title>NiDi AutoColor — Editor Foto</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/script.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="NiDi AutoColor home">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span class="brand-copy"><strong>nidi</strong><small>AUTOCOLOR</small></span>
+      </a>
+      <div class="topbar-center"><span class="status-light"></span><span>PHOTO LAB</span><span class="server-badge">SERVER PROCESSING</span></div>
+      <div class="topbar-actions">
+        <input id="file-input" type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/tiff,image/gif" hidden>
+        <button id="import-button" class="button button-quiet" type="button"><span class="button-icon">＋</span> Impor foto</button>
+        <label class="format-select" for="export-format"><span>Format</span><select id="export-format" aria-label="Format ekspor"><option value="png">PNG</option><option value="jpeg">JPG</option></select></label>
+        <button id="export-button" class="button button-primary" type="button" disabled><span>Ekspor</span><span class="export-arrow">↗</span></button>
+      </div>
+    </header>
+    <main class="editor-layout">
+      <section class="workspace" aria-label="Area pratinjau foto">
+        <div class="workspace-toolbar">
+          <div class="photo-meta"><span class="meta-dot"></span><span id="photo-name">Belum ada foto</span><span id="photo-dimensions" class="dimension-label"></span></div>
+          <div class="preview-actions"><span id="render-status" class="render-status">Siap mengedit</span><button id="compare-button" type="button" class="compare-button" disabled title="Tahan untuk melihat foto asli">◉ <span>Tahan untuk asli</span></button></div>
+        </div>
+        <div id="drop-zone" class="photo-stage">
+          <img id="photo-preview" alt="Pratinjau foto yang telah diedit" hidden>
+          <div id="empty-state" class="empty-state">
+            <div class="upload-illustration" aria-hidden="true"><span class="upload-glow"></span><span class="upload-frame"><span class="sun"></span><span class="mountain mountain-back"></span><span class="mountain mountain-front"></span></span><span class="upload-plus">＋</span></div>
+            <p class="empty-eyebrow">RUANG KERJA KREATIF</p>
+            <h1>Warna yang kamu bayangkan,<br><em>dimulai dari sini.</em></h1>
+            <p class="empty-description">Impor foto untuk mulai melakukan koreksi dan color grading.</p>
+            <button id="empty-import" class="button button-primary empty-button" type="button">Pilih foto <span>↗</span></button>
+            <span class="format-hint">JPG, PNG, WEBP · hingga 35 MB</span>
+          </div>
+          <div id="drop-overlay" class="drop-overlay" hidden><div><strong>Lepas foto di sini</strong><span>Foto dikirim ke server untuk diproses.</span></div></div>
+        </div>
+        <footer class="workspace-footer"><span><span class="server-lock">⌑</span> Foto diproses di server</span><span>PRATINJAU SERVER</span></footer>
+      </section>
+      <aside class="edit-panel" aria-label="Panel pengeditan">
+        <div class="panel-heading"><div><p class="section-kicker">WORKSPACE / 01</p><h2>Color studio</h2></div><button id="reset-button" type="button" class="reset-button" disabled>↺ <span>Atur ulang</span></button></div>
+        <div class="tab-list" role="tablist" aria-label="Kategori edit">
+          <button class="tab-button is-active" id="tab-basic" role="tab" aria-selected="true" aria-controls="panel-basic" data-tab="basic">Dasar</button>
+          <button class="tab-button" id="tab-hsl" role="tab" aria-selected="false" aria-controls="panel-hsl" data-tab="hsl">HSL</button>
+          <button class="tab-button" id="tab-curves" role="tab" aria-selected="false" aria-controls="panel-curves" data-tab="curves">Kurva</button>
+          <button class="tab-button" id="tab-color" role="tab" aria-selected="false" aria-controls="panel-color" data-tab="color">Color wheel</button>
+        </div>
+        <div class="panels-scroll">
+          <section class="tab-panel is-active" id="panel-basic" role="tabpanel" aria-labelledby="tab-basic">
+            <div class="panel-section"><div class="subheading"><div><span class="section-index">01</span><h3>Koreksi dasar</h3></div><span class="section-note">LIGHT & COLOR</span></div><div id="basic-controls" class="control-list"></div></div>
+            <div class="panel-section effects-section"><div class="subheading"><div><span class="section-index">02</span><h3>Efek</h3></div><span class="section-note">DETAIL</span></div><div id="effect-controls" class="control-list"></div></div>
+          </section>
+          <section class="tab-panel" id="panel-hsl" role="tabpanel" aria-labelledby="tab-hsl" hidden><div class="panel-section"><div class="subheading"><div><span class="section-index">03</span><h3>Campuran warna</h3></div><span class="section-note">HUE / SAT / LUM</span></div><p class="panel-intro">Atur setiap rentang warna secara terpisah.</p><div id="hsl-controls" class="hsl-list"></div></div></section>
+          <section class="tab-panel" id="panel-curves" role="tabpanel" aria-labelledby="tab-curves" hidden><div class="panel-section"><div class="subheading"><div><span class="section-index">04</span><h3>Kurva tonal</h3></div><button id="reset-curve" class="text-button" type="button">Reset kurva</button></div><p class="panel-intro">Tarik titik di garis untuk membentuk tonal foto.</p><div class="curve-frame"><svg id="curve-editor" viewBox="0 0 280 220" role="application" aria-label="Editor kurva tonal. Gunakan tombol panah saat titik dipilih." tabindex="0"><g class="curve-grid"><path d="M20 20H260M20 65H260M20 110H260M20 155H260M20 200H260M20 20V200M80 20V200M140 20V200M200 20V200M260 20V200"/><path class="curve-diagonal" d="M20 200L260 20"/></g><polyline id="curve-line" points=""></polyline><g id="curve-points"></g></svg></div><div class="curve-axis"><span>SHADOWS</span><span>MIDTONES</span><span>HIGHLIGHTS</span></div></div></section>
+          <section class="tab-panel" id="panel-color" role="tabpanel" aria-labelledby="tab-color" hidden><div class="panel-section"><div class="subheading"><div><span class="section-index">05</span><h3>Color grading</h3></div><span class="section-note">3-WAY</span></div><p class="panel-intro">Pilih warna pada roda untuk tiap rentang tonal.</p><div id="wheel-controls" class="wheel-list"></div></div></section>
+        </div>
+        <div class="panel-bottom"><span class="bottom-mark">N</span><span>Color grading yang terasa milikmu.</span><span class="bottom-version">v1.0</span></div>
+      </aside>
+    </main>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </div>
+</body>
+</html>
