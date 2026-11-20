@@ -64,6 +64,20 @@
         <div class="panel-bottom"><span class="bottom-mark">N</span><span>Color grading yang terasa milikmu.</span><span class="bottom-version">v1.0</span></div>
       </aside>
     </main>
+    <div id="wheel-editor-layer" class="wheel-editor-layer" hidden>
+      <section id="wheel-editor-window" class="wheel-editor-window" role="dialog" aria-modal="false" aria-labelledby="wheel-editor-title">
+        <header id="wheel-editor-drag-handle" class="wheel-editor-header">
+          <div><span class="wheel-editor-kicker">COLOR GRADING / PRESISI</span><h2 id="wheel-editor-title">Color wheel</h2></div>
+          <button id="wheel-editor-close" class="wheel-editor-close" type="button" aria-label="Tutup jendela color wheel">&#x00D7;</button>
+        </header>
+        <div class="wheel-editor-content">
+          <div id="expanded-color-wheel" class="color-wheel wheel-editor-wheel" role="slider" tabindex="0" aria-label="Color wheel yang diperbesar">
+            <span class="wheel-marker"></span>
+          </div>
+          <p>Klik atau geser roda untuk memilih warna dengan lebih presisi.</p>
+        </div>
+      </section>
+    </div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
 </body>

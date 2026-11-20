@@ -17,7 +17,7 @@
         ['shadows', 'Shadows', -100, 100], ['whites', 'Whites', -100, 100], ['blacks', 'Blacks', -100, 100],
       ] },
       { title: 'Color', fields: [
-        ['temperature', 'Temperature', -100, 100, '°', { gradient: 'temperature' }],
+        ['temperature', 'Temperature (°)', -100, 100, '', { gradient: 'temperature' }],
         ['tint', 'Tint', -100, 100, '', { gradient: 'tint' }],
         ['saturation', 'Saturation', -100, 100, '', { gradient: 'saturation' }],
         ['hue', 'Color / Hue', -180, 180],
@@ -61,6 +61,7 @@
   let panX = 0;
   let panY = 0;
   let panStart = null;
+  let controlIdCounter = 0;
   let selectedCurveChannel = 'master';
   let selectedHslBand = 'red';
 
@@ -76,17 +77,18 @@
   const zoomIndicator = $('#zoom-indicator');
   const status = $('#render-status');
   const toast = $('#toast');
+  const wheelEditorLayer = $('#wheel-editor-layer');
+  const wheelEditorWindow = $('#wheel-editor-window');
+  const wheelEditorDragHandle = $('#wheel-editor-drag-handle');
+  const wheelEditorClose = $('#wheel-editor-close');
+  const expandedColorWheel = $('#expanded-color-wheel');
+  let wheelEditorOpener = null;
 
   function setPath(path, value) {
     const keys = path.split('.');
     let target = state;
     while (keys.length > 1) target = target[keys.shift()];
     target[keys[0]] = value;
-  }
-  function formatValue(value, suffix = '') {
-    const number = Number(value);
-    const text = number > 0 ? `+${number}` : `${number}`;
-    return `${text}${suffix}`;
   }
   function updateRangeFill(range) {
     const min = Number(range.min); const max = Number(range.max); const value = Number(range.value);
@@ -98,23 +100,55 @@
     range.style.setProperty('--fill', `${position}%`);
   }
   function makeControl(path, label, min, max, suffix = '', options = {}) {
-    const row = document.createElement('label');
+    const row = document.createElement('div');
     row.className = options.compact ? 'control-row control-row-compact' : 'control-row';
-    const title = document.createElement('span'); title.className = 'control-label'; title.textContent = label;
+    const id = `control-${++controlIdCounter}`;
+    const title = document.createElement('label'); title.className = 'control-label'; title.textContent = label; title.htmlFor = id;
     const range = document.createElement('input');
     range.className = `range${options.gradient ? ` gradient-${options.gradient}` : ''}`;
-    range.type = 'range'; range.min = min; range.max = max; range.step = 1; range.dataset.setting = path;
+    range.id = id; range.type = 'range'; range.min = min; range.max = max; range.step = .01; range.dataset.setting = path;
     if (options.color) range.style.setProperty('--hsl-color', options.color);
-    range.value = path.split('.').reduce((obj, key) => obj[key], state);
+    const readPath = source => path.split('.').reduce((obj, key) => obj[key], source);
+    const defaultValue = Number(readPath(freshState()));
+    range.value = Number(readPath(state));
     range.setAttribute('aria-label', label);
-    const output = document.createElement('output'); output.className = 'control-value'; output.textContent = formatValue(range.value, suffix);
-    range.addEventListener('input', () => {
-      setPath(path, Number(range.value)); output.textContent = formatValue(range.value, suffix);
+    const valueWrap = document.createElement('div'); valueWrap.className = 'control-value-wrap';
+    const valueInput = document.createElement('input'); valueInput.className = 'control-value'; valueInput.type = 'number';
+    valueInput.min = min; valueInput.max = max; valueInput.step = .01; valueInput.value = range.value;
+    valueInput.setAttribute('aria-label', `${label}${suffix ? ` (${suffix})` : ''} numeric value`);
+    valueInput.title = suffix ? `Satuan: ${suffix}` : 'Ketik nilai edit dengan presisi';
+    const reset = document.createElement('button'); reset.type = 'button'; reset.className = 'control-reset';
+    reset.textContent = '↺'; reset.title = `Reset ${label}`; reset.setAttribute('aria-label', `Reset ${label}`); reset.hidden = true;
+    const syncValue = value => {
+      const clean = Number(Number(value).toFixed(2));
+      setPath(path, clean); range.value = clean; valueInput.value = clean;
       updateRangeFill(range);
+      const modified = Math.abs(clean - defaultValue) > .0001;
+      row.classList.toggle('is-modified', modified); reset.hidden = !modified;
+    };
+    const commitManualValue = () => {
+      const typed = valueInput.value.trim();
+      if (!typed || !Number.isFinite(Number(typed))) { valueInput.value = range.value; return; }
+      syncValue(Math.max(Number(min), Math.min(Number(max), Number(typed))));
+      if (path === 'vignette') updateVignetteControls();
+      queuePreview();
+    };
+    range.addEventListener('input', () => {
+      syncValue(Number(range.value));
       if (path === 'vignette') updateVignetteControls();
       queuePreview();
     });
-    row.append(title, range, output); updateRangeFill(range);
+    valueInput.addEventListener('change', commitManualValue);
+    valueInput.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); commitManualValue(); valueInput.blur(); } });
+    reset.addEventListener('click', () => {
+      syncValue(defaultValue);
+      if (path === 'vignette') updateVignetteControls();
+      queuePreview();
+    });
+    valueWrap.append(valueInput, reset);
+    row.append(title, range, valueWrap); updateRangeFill(range);
+    const modified = Math.abs(Number(range.value) - defaultValue) > .0001;
+    row.classList.toggle('is-modified', modified); reset.hidden = !modified;
     return row;
   }
   function buildControls() {
@@ -140,7 +174,11 @@
     const disabled = Number(state.vignette) === 0;
     $$('#effect-controls input[data-setting^="vignette"]')
       .filter(input => input.dataset.setting !== 'vignette')
-      .forEach(input => { input.disabled = disabled; input.closest('.control-row').classList.toggle('is-disabled', disabled); });
+      .forEach(input => {
+        const row = input.closest('.control-row');
+        row.querySelectorAll('input, button').forEach(control => { control.disabled = disabled; });
+        row.classList.toggle('is-disabled', disabled);
+      });
   }
   function buildHslControls() {
     const swatches = $('#hsl-swatches'); swatches.replaceChildren();
@@ -167,25 +205,32 @@
   function buildWheels() {
     const root = $('#wheel-controls'); root.replaceChildren();
     for (const [key, label] of [['shadows', 'SHADOWS'], ['midtones', 'MIDTONES'], ['highlights', 'HIGHLIGHTS']]) {
-      const card = document.createElement('div'); card.className = 'wheel-card';
+      const card = document.createElement('div'); card.className = 'wheel-card'; card.dataset.wheelCard = key;
+      const header = document.createElement('div'); header.className = 'wheel-card-header';
       const caption = document.createElement('span'); caption.className = 'wheel-tonal'; caption.textContent = label;
+      const actions = document.createElement('div'); actions.className = 'wheel-card-actions';
+      const reset = document.createElement('button'); reset.type = 'button'; reset.className = 'wheel-card-action wheel-reset'; reset.textContent = '\u21ba';
+      reset.title = `Reset color wheel ${label}`; reset.setAttribute('aria-label', `Reset color wheel ${label}`);
+      reset.addEventListener('click', () => resetWheel(key));
+      const expand = document.createElement('button'); expand.type = 'button'; expand.className = 'wheel-card-action wheel-expand'; expand.textContent = '\u2922';
+      expand.title = `Perbesar color wheel ${label}`; expand.setAttribute('aria-label', `Perbesar color wheel ${label}`);
+      expand.addEventListener('click', () => openWheelEditor(key, label, expand));
+      actions.append(reset, expand); header.append(caption, actions);
       const wheel = document.createElement('div'); wheel.className = 'color-wheel'; wheel.dataset.wheel = key; wheel.setAttribute('role', 'slider'); wheel.setAttribute('aria-label', `${label} color wheel`); wheel.setAttribute('tabindex', '0');
       const marker = document.createElement('span'); marker.className = 'wheel-marker'; wheel.append(marker);
       const adjustments = document.createElement('div'); adjustments.className = 'wheel-adjustments';
       adjustments.append(makeControl(`wheels.${key}.luminance`, 'Luma', -50, 50, '', { compact: true, gradient: 'wheel-luminance' }));
-      card.append(caption, wheel, adjustments); root.append(card);
+      card.append(header, wheel, adjustments); root.append(card);
       wheel.addEventListener('pointerdown', wheelPointerDown);
-      wheel.addEventListener('keydown', event => {
-        if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
-        event.preventDefault(); const current = state.wheels[key];
-        if (event.key === 'ArrowUp') current.amount = Math.min(1, current.amount + .04);
-        if (event.key === 'ArrowDown') current.amount = Math.max(0, current.amount - .04);
-        if (event.key === 'ArrowRight') current.hue = (current.hue + 4) % 360;
-        if (event.key === 'ArrowLeft') current.hue = (current.hue + 356) % 360;
-        updateWheelMarker(wheel); queuePreview();
-      });
+      wheel.addEventListener('keydown', wheelKeyDown);
       updateWheelMarker(wheel);
     }
+    if (!wheelEditorLayer.hidden && expandedColorWheel.dataset.wheel) updateWheelMarker(expandedColorWheel);
+  }
+  function updateWheelCardActions(key) {
+    const wheel = state.wheels[key];
+    const reset = $(`[data-wheel-card="${key}"] .wheel-reset`);
+    if (reset) reset.disabled = Math.abs(wheel.hue) < .0001 && Math.abs(wheel.amount) < .0001;
   }
   function updateWheelMarker(wheel) {
     const { hue, amount } = state.wheels[wheel.dataset.wheel];
@@ -194,6 +239,62 @@
     const y = 50 - Math.cos(angle) * amount * 43;
     wheel.style.setProperty('--wheel-x', `${x}%`); wheel.style.setProperty('--wheel-y', `${y}%`);
     wheel.setAttribute('aria-valuetext', `Hue ${Math.round(hue)} derajat, kekuatan ${Math.round(amount * 100)} persen`);
+    updateWheelCardActions(wheel.dataset.wheel);
+  }
+  function updateWheelMarkers(key) {
+    $$('.color-wheel').filter(wheel => wheel.dataset.wheel === key).forEach(updateWheelMarker);
+  }
+  function wheelKeyDown(event) {
+    if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault(); const key = event.currentTarget.dataset.wheel; const current = state.wheels[key];
+    if (event.key === 'ArrowUp') current.amount = Math.min(1, current.amount + .04);
+    if (event.key === 'ArrowDown') current.amount = Math.max(0, current.amount - .04);
+    if (event.key === 'ArrowRight') current.hue = (current.hue + 4) % 360;
+    if (event.key === 'ArrowLeft') current.hue = (current.hue + 356) % 360;
+    updateWheelMarkers(key); queuePreview();
+  }
+  function resetWheel(key) {
+    state.wheels[key].hue = 0; state.wheels[key].amount = 0;
+    updateWheelMarkers(key); queuePreview();
+  }
+  function openWheelEditor(key, label, opener) {
+    wheelEditorOpener = opener;
+    $('#wheel-editor-title').textContent = `${label} color wheel`;
+    expandedColorWheel.dataset.wheel = key;
+    expandedColorWheel.setAttribute('aria-label', `${label} color wheel yang diperbesar`);
+    wheelEditorLayer.hidden = false;
+    const rect = wheelEditorWindow.getBoundingClientRect();
+    wheelEditorWindow.style.left = `${Math.max(8, (window.innerWidth - rect.width) / 2)}px`;
+    wheelEditorWindow.style.top = `${Math.max(8, (window.innerHeight - rect.height) / 2)}px`;
+    updateWheelMarker(expandedColorWheel);
+    wheelEditorClose.focus();
+  }
+  function closeWheelEditor(restoreFocus = true) {
+    if (wheelEditorLayer.hidden) return;
+    wheelEditorLayer.hidden = true;
+    if (restoreFocus && wheelEditorOpener?.isConnected) wheelEditorOpener.focus();
+    wheelEditorOpener = null;
+  }
+  function startWheelEditorDrag(event) {
+    if (event.button !== 0 || event.target.closest('button')) return;
+    event.preventDefault();
+    const rect = wheelEditorWindow.getBoundingClientRect();
+    const offsetX = event.clientX - rect.left; const offsetY = event.clientY - rect.top;
+    wheelEditorDragHandle.setPointerCapture(event.pointerId);
+    const move = pointer => {
+      const maxLeft = Math.max(8, window.innerWidth - rect.width - 8);
+      const maxTop = Math.max(8, window.innerHeight - rect.height - 8);
+      wheelEditorWindow.style.left = `${Math.max(8, Math.min(maxLeft, pointer.clientX - offsetX))}px`;
+      wheelEditorWindow.style.top = `${Math.max(8, Math.min(maxTop, pointer.clientY - offsetY))}px`;
+    };
+    const end = () => {
+      wheelEditorDragHandle.removeEventListener('pointermove', move);
+      wheelEditorDragHandle.removeEventListener('pointerup', end);
+      wheelEditorDragHandle.removeEventListener('pointercancel', end);
+    };
+    wheelEditorDragHandle.addEventListener('pointermove', move);
+    wheelEditorDragHandle.addEventListener('pointerup', end);
+    wheelEditorDragHandle.addEventListener('pointercancel', end);
   }
   function wheelPointerDown(event) {
     const wheel = event.currentTarget; const key = wheel.dataset.wheel;
@@ -204,7 +305,7 @@
       const distance = Math.min(radius, Math.hypot(dx, dy));
       const hue = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
       state.wheels[key].hue = hue; state.wheels[key].amount = distance / radius;
-      updateWheelMarker(wheel); queuePreview();
+      updateWheelMarkers(key); queuePreview();
     };
     update(event); wheel.setPointerCapture(event.pointerId);
     const move = pointer => update(pointer);
@@ -456,7 +557,20 @@
   $('#reset-curve').addEventListener('click', () => { state.curves[selectedCurveChannel] = [{ x: 0, y: 0 }, { x: 1, y: 1 }]; updateCurve(); queuePreview(); });
   compareButton.addEventListener('pointerdown', event => { event.preventDefault(); toggleCompare(true); });
   for (const type of ['pointerup', 'pointercancel', 'pointerleave']) compareButton.addEventListener(type, () => toggleCompare(false));
-  document.addEventListener('keydown', event => { if (event.key === 'Escape') toggleCompare(false); });
+  wheelEditorClose.addEventListener('click', () => closeWheelEditor());
+  expandedColorWheel.addEventListener('pointerdown', wheelPointerDown);
+  expandedColorWheel.addEventListener('keydown', wheelKeyDown);
+  wheelEditorDragHandle.addEventListener('pointerdown', startWheelEditorDrag);
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    closeWheelEditor(); toggleCompare(false);
+  });
+  window.addEventListener('resize', () => {
+    if (wheelEditorLayer.hidden) return;
+    const rect = wheelEditorWindow.getBoundingClientRect();
+    wheelEditorWindow.style.left = `${Math.max(8, Math.min(window.innerWidth - rect.width - 8, rect.left))}px`;
+    wheelEditorWindow.style.top = `${Math.max(8, Math.min(window.innerHeight - rect.height - 8, rect.top))}px`;
+  });
   $$('.tab-button').forEach(button => button.addEventListener('click', () => {
     $$('.tab-button').forEach(tab => { const selected = tab === button; tab.classList.toggle('is-active', selected); tab.setAttribute('aria-selected', String(selected)); });
     $$('.tab-panel').forEach(panel => { const active = panel.id === `panel-${button.dataset.tab}`; panel.classList.toggle('is-active', active); panel.hidden = !active; });
