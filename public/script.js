@@ -49,6 +49,7 @@
   const exportButton = $('#export-button');
   const compareButton = $('#compare-button');
   const preview = $('#photo-preview');
+  const previewLoading = $('#preview-loading');
   const emptyState = $('#empty-state');
   const dropZone = $('#drop-zone');
   const dropOverlay = $('#drop-overlay');
@@ -88,7 +89,8 @@
   }
   function buildControls() {
     for (const [key, definitions] of Object.entries(controlDefinitions)) {
-      const target = $(`#${key}-controls`); target.replaceChildren();
+      const targetId = key === 'effects' ? 'effect-controls' : `${key}-controls`;
+      const target = $(`#${targetId}`); target.replaceChildren();
       for (const [name, label, min, max] of definitions) target.append(makeControl(name, label, min, max, name === 'temperature' ? '°' : ''));
     }
     const hslRoot = $('#hsl-controls'); hslRoot.replaceChildren();
@@ -215,10 +217,12 @@
       if (!response.ok) throw new Error((await response.json()).error || 'Pratinjau gagal dibuat.');
       const url = URL.createObjectURL(await response.blob());
       if (version !== renderNumber || activeId !== imageId || isComparing) { URL.revokeObjectURL(url); return; }
-      setPreviewUrl(url); setStatus('Pratinjau diperbarui');
+      setPreviewUrl(url); preview.hidden = false; previewLoading.hidden = true; setStatus('Pratinjau diperbarui');
     } catch (error) {
       if (error.name === 'AbortError') return;
-      setStatus('Gagal merender'); showToast(error.message);
+      setStatus('Gagal merender');
+      if (!previewUrl) { previewLoading.querySelector('strong').textContent = 'Pratinjau gagal dibuat. Coba impor ulang foto.'; previewLoading.hidden = false; }
+      showToast(error.message);
     }
   }
   async function loadOriginalPreview(activeId) {
@@ -231,7 +235,7 @@
     if (activeId !== imageId) { URL.revokeObjectURL(url); return; }
     if (originalUrl) URL.revokeObjectURL(originalUrl);
     originalUrl = url;
-    if (isComparing) preview.src = originalUrl;
+    if (isComparing) { preview.src = originalUrl; preview.hidden = false; previewLoading.hidden = true; }
   }
   async function importFile(file) {
     if (!file) return;
@@ -248,7 +252,8 @@
       if (previewUrl) URL.revokeObjectURL(previewUrl); if (originalUrl) URL.revokeObjectURL(originalUrl);
       previewUrl = ''; originalUrl = ''; imageId = result.imageId; currentFileName = file.name; state = freshState(); isComparing = false;
       $('#photo-name').textContent = file.name; $('#photo-dimensions').textContent = `${result.width.toLocaleString('id-ID')} × ${result.height.toLocaleString('id-ID')}`;
-      emptyState.hidden = true; preview.hidden = false; exportButton.disabled = false; compareButton.disabled = false; $('#reset-button').disabled = false;
+      emptyState.hidden = true; preview.hidden = true; previewLoading.querySelector('strong').textContent = 'Memproses foto di server…'; previewLoading.hidden = false;
+      exportButton.disabled = false; compareButton.disabled = false; $('#reset-button').disabled = false;
       buildControls(); setStatus('Foto tersimpan di server');
       void loadOriginalPreview(imageId).catch(error => showToast(error.message));
       queuePreview(0);
@@ -278,7 +283,7 @@
     isComparing = active; compareButton.classList.toggle('is-active', active);
     if (active) {
       clearTimeout(debounceTimer); if (previewController) previewController.abort();
-      if (originalUrl) { preview.src = originalUrl; setStatus('Foto asli'); }
+      if (originalUrl) { preview.src = originalUrl; preview.hidden = false; previewLoading.hidden = true; setStatus('Foto asli'); }
       else { setStatus('Memuat foto asli…', true); void loadOriginalPreview(imageId).catch(error => showToast(error.message)); }
     } else { setStatus('Memulihkan pratinjau…', true); queuePreview(0); }
   }

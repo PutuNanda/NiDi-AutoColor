@@ -20,6 +20,38 @@ body, .workspace { background: #121420; color: #f0f0f5; }
   opacity: .13;
   background-image: linear-gradient(#8b8eaa20 1px, transparent 1px), linear-gradient(90deg, #8b8eaa20 1px, transparent 1px);
 }
+#photo-preview {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.preview-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 9px;
+  color: #d4d1eb;
+  text-align: center;
+}
+.preview-loading[hidden] { display: none; }
+.preview-loading strong { font-size: 13px; font-weight: 600; }
+.preview-loading small { color: #9699b1; font-size: 11px; }
+.loading-spinner {
+  width: 27px;
+  height: 27px;
+  margin-bottom: 4px;
+  border: 2px solid #41435e;
+  border-top-color: #a99aff;
+  border-radius: 50%;
+  animation: preview-spin .8s linear infinite;
+}
+@keyframes preview-spin { to { transform: rotate(360deg); } }
 .brand-mark i { background: linear-gradient(135deg, #7b61ff, #b06ab3); }
 .status-light, .meta-dot { background: #a99aff; box-shadow: 0 0 11px #9584ff55; }
 .meta-dot { background: #767a98; box-shadow: none; }
