@@ -55,6 +55,9 @@
   let toastTimer = 0;
   let isComparing = false;
   let curveDragIndex = -1;
+  let photoWidth = 0;
+  let photoHeight = 0;
+  let zoomLevel = 1;
   let selectedCurveChannel = 'master';
   let selectedHslBand = 'red';
 
@@ -67,6 +70,7 @@
   const emptyState = $('#empty-state');
   const dropZone = $('#drop-zone');
   const dropOverlay = $('#drop-overlay');
+  const zoomIndicator = $('#zoom-indicator');
   const status = $('#render-status');
   const toast = $('#toast');
 
@@ -301,6 +305,37 @@
     const previous = previewUrl; previewUrl = url; preview.src = url;
     if (previous && previous !== url) URL.revokeObjectURL(previous);
   }
+  function fitCanvasToViewport() {
+    if (!imageId || !photoWidth || !photoHeight) return;
+    const workspace = $('.workspace');
+    const style = getComputedStyle(workspace);
+    const horizontalPadding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    const verticalPadding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    const maxWidth = Math.max(120, workspace.clientWidth - horizontalPadding - 32);
+    const toolbarHeight = $('.workspace-toolbar').getBoundingClientRect().height;
+    const footerHeight = $('.workspace-footer').getBoundingClientRect().height;
+    const availableHeight = workspace.clientHeight - toolbarHeight - footerHeight - verticalPadding;
+    const maxHeight = Math.max(120, Math.min(availableHeight, window.innerHeight * .76));
+    const ratio = photoWidth / photoHeight;
+    let width = Math.min(maxWidth, maxHeight * ratio);
+    let height = width / ratio;
+    if (height > maxHeight) { height = maxHeight; width = height * ratio; }
+    dropZone.classList.add('has-image');
+    dropZone.style.width = `${Math.round(width)}px`;
+    dropZone.style.height = `${Math.round(height)}px`;
+    dropZone.style.aspectRatio = `${photoWidth} / ${photoHeight}`;
+  }
+  function setZoom(value, event) {
+    zoomLevel = Math.max(.25, Math.min(5, value));
+    if (event) {
+      const rect = dropZone.getBoundingClientRect();
+      const x = Math.max(0, Math.min(100, (event.clientX - rect.left) / rect.width * 100));
+      const y = Math.max(0, Math.min(100, (event.clientY - rect.top) / rect.height * 100));
+      preview.style.transformOrigin = `${x}% ${y}%`;
+    } else preview.style.transformOrigin = '50% 50%';
+    preview.style.transform = `scale(${zoomLevel})`;
+    zoomIndicator.querySelector('strong').textContent = `${Math.round(zoomLevel * 100)}%`;
+  }
   function queuePreview(delay = 130) {
     if (!imageId || isComparing) return;
     clearTimeout(debounceTimer); debounceTimer = setTimeout(renderPreview, delay);
@@ -359,6 +394,7 @@
       if (previewUrl) URL.revokeObjectURL(previewUrl); if (originalUrl) URL.revokeObjectURL(originalUrl);
       previewUrl = ''; originalUrl = ''; imageId = result.imageId; currentFileName = file.name; state = freshState(); isComparing = false;
       currentOutputExtension = result.outputExtension || 'png';
+      photoWidth = result.width; photoHeight = result.height; setZoom(1); fitCanvasToViewport(); zoomIndicator.hidden = false;
       selectedCurveChannel = 'master'; selectedHslBand = 'red';
       $('#photo-name').textContent = file.name; $('#photo-dimensions').textContent = `${result.width.toLocaleString('id-ID')} × ${result.height.toLocaleString('id-ID')}`;
       emptyState.hidden = true; preview.hidden = true; previewLoading.querySelector('strong').textContent = 'Memproses foto di server…'; previewLoading.hidden = false;
@@ -414,6 +450,12 @@
   for (const type of ['dragenter', 'dragover']) dropZone.addEventListener(type, event => { event.preventDefault(); dropOverlay.hidden = false; dropZone.classList.add('is-dragging'); });
   for (const type of ['dragleave', 'drop']) dropZone.addEventListener(type, event => { event.preventDefault(); dropOverlay.hidden = true; dropZone.classList.remove('is-dragging'); });
   dropZone.addEventListener('drop', event => importFile(event.dataTransfer.files[0]));
+  dropZone.addEventListener('wheel', event => {
+    if (!event.ctrlKey || !imageId) return;
+    event.preventDefault();
+    setZoom(zoomLevel * (event.deltaY < 0 ? 1.12 : 1 / 1.12), event);
+  }, { passive: false });
+  window.addEventListener('resize', fitCanvasToViewport);
   document.addEventListener('dragover', event => event.preventDefault());
   document.addEventListener('drop', event => event.preventDefault());
   window.addEventListener('beforeunload', () => { if (previewUrl) URL.revokeObjectURL(previewUrl); if (originalUrl) URL.revokeObjectURL(originalUrl); });
