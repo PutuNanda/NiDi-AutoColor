@@ -35,10 +35,23 @@ function readBody(req, limit) {
 }
 const clamp = (v, lo, hi, d = 0) => Number.isFinite(Number(v)) ? Math.max(lo, Math.min(hi, Number(v))) : d;
 function cleanSettings(input = {}) {
-  const keys = { temperature: [-100,100], tint: [-100,100], hue: [-180,180], contrast: [-100,100], brightness: [-100,100], exposure: [-100,100], highlights: [-100,100], shadows: [-100,100], whites: [-100,100], blacks: [-100,100], texture: [-100,100], clarity: [-100,100], saturation: [-100,100], vignette: [-100,100], vignetteMidpoint: [0,100], vignetteFeather: [1,100] };
+  const keys = { temperature: [-100,100], tint: [-100,100], hue: [-180,180], contrast: [-100,100], brightness: [-100,100], exposure: [-100,100], highlights: [-100,100], shadows: [-100,100], whites: [-100,100], blacks: [-100,100], texture: [-100,100], clarity: [-100,100], saturation: [-100,100], vignette: [-100,100], vignetteMidpoint: [0,100], vignetteRoundness: [-100,100], vignetteFeather: [1,100] };
   const out = {};
   for (const [key, [min, max]] of Object.entries(keys)) out[key] = clamp(input[key], min, max, key === 'vignetteMidpoint' ? 45 : key === 'vignetteFeather' ? 70 : 0);
-  out.curve = Array.from({ length: 5 }, (_, i) => clamp(input.curve?.[i], 0, 1, i / 4));
+  const cleanCurve = (source) => {
+    const points = Array.isArray(source) ? source.map((point, index) => {
+      if (typeof point === 'number') return { x: index / Math.max(1, source.length - 1), y: point };
+      return { x: Number(point?.x), y: Number(point?.y) };
+    }).filter(point => Number.isFinite(point.x) && Number.isFinite(point.y)) : [];
+    const inner = points.filter(point => point.x > .005 && point.x < .995)
+      .map(point => ({ x: clamp(point.x, .01, .99), y: clamp(point.y, 0, 1) }))
+      .sort((a, b) => a.x - b.x);
+    const accepted = [];
+    for (const point of inner) if (accepted.length < 8 && point.x - (accepted.at(-1)?.x ?? 0) >= .01) accepted.push(point);
+    return [{ x: 0, y: 0 }, ...accepted, { x: 1, y: 1 }];
+  };
+  const inputCurves = input.curves || {};
+  out.curves = Object.fromEntries(['master', 'red', 'green', 'blue'].map(channel => [channel, cleanCurve(inputCurves[channel] || (channel === 'master' ? input.curve : null))]));
   out.hsl = Object.fromEntries(bands.map(b => [b, { h: clamp(input.hsl?.[b]?.h,-100,100), s: clamp(input.hsl?.[b]?.s,-100,100), l: clamp(input.hsl?.[b]?.l,-100,100) }]));
   out.wheels = Object.fromEntries(['shadows','midtones','highlights'].map(k => [k, { hue: clamp(input.wheels?.[k]?.hue,0,360), amount: clamp(input.wheels?.[k]?.amount,0,1), luminance: clamp(input.wheels?.[k]?.luminance,-50,50) }]));
   return out;
@@ -56,17 +69,28 @@ function hslRgb(h,s,l) {
 }
 function curveTable(points) {
   const lut = new Float32Array(256);
-  for(let i=0;i<256;i++){const x=i/255,k=Math.min(3,Math.floor(x*4)),t=Math.min(1,(x-k/4)*4);lut[i]=(points[k]*(1-t)+points[k+1]*t)*255;}
+  for(let i=0;i<256;i++){
+    const x=i/255;let segment=0;
+    while(segment<points.length-2&&x>points[segment+1].x)segment++;
+    const left=points[segment],right=points[segment+1],t=Math.max(0,Math.min(1,(x-left.x)/(right.x-left.x||1)));
+    lut[i]=(left.y*(1-t)+right.y*t)*255;
+  }
   return lut;
+}
+function histogramHeader(data) {
+  const bins=Array(64).fill(0);
+  for(let i=0;i<data.length;i+=4){const y=data[i]*.2126+data[i+1]*.7152+data[i+2]*.0722;bins[Math.min(63,Math.floor(y/256*64))]++;}
+  const max=Math.max(1,...bins);return bins.map(value=>Math.round(value/max*1000)).join(',');
 }
 function luma(data,i){return data[i]*.2126+data[i+1]*.7152+data[i+2]*.0722;}
 function processPixels(data,w,h,s) {
-  const lut=curveTable(s.curve), hslActive=bands.some(k=>Object.values(s.hsl[k]).some(Boolean));
+  const curves=Object.fromEntries(['master','red','green','blue'].map(channel=>[channel,curveTable(s.curves[channel])]));
+  const hslActive=bands.some(k=>Object.values(s.hsl[k]).some(Boolean));
   const wheelNames=['shadows','midtones','highlights'];
   const wheelRgb=wheelNames.map(k=>hslRgb(s.wheels[k].hue,1,.5));
   const zones=[s.wheels.shadows,s.wheels.midtones,s.wheels.highlights];
   const contrast=1+s.contrast/100, exposure=2**(s.exposure/50), bright=s.brightness*.35;
-  const start=s.vignetteMidpoint/100*.8, falloff=1+s.vignetteFeather/30, vig=s.vignette/100;
+  const start=s.vignetteMidpoint/100*.8, falloff=1+s.vignetteFeather/30, vig=s.vignette/100, roundness=(s.vignetteRoundness+100)/200;
   for(let y=0;y<h;y++){
     const ny=y/Math.max(1,h-1)*2-1;
     for(let x=0;x<w;x++){
@@ -76,8 +100,12 @@ function processPixels(data,w,h,s) {
       let lum=(r*.2126+g*.7152+b*.0722)/255;
       const tonal=s.shadows*(1-smooth(.12,.62,lum))*.65+s.highlights*smooth(.38,.92,lum)*.55+s.blacks*(1-smooth(.04,.35,lum))*.35+s.whites*smooth(.66,.98,lum)*.35;
       r+=tonal;g+=tonal;b+=tonal;
-      lum=(r*.2126+g*.7152+b*.0722)/255; const mapped=lut[Math.max(0,Math.min(255,Math.round(lum*255)))], scale=lum>.003?mapped/(lum*255):1;
-      r*=scale;g*=scale;b*=scale;
+      r=curves.master[Math.max(0,Math.min(255,Math.round(r)))];
+      g=curves.master[Math.max(0,Math.min(255,Math.round(g)))];
+      b=curves.master[Math.max(0,Math.min(255,Math.round(b)))];
+      r=curves.red[Math.max(0,Math.min(255,Math.round(r)))];
+      g=curves.green[Math.max(0,Math.min(255,Math.round(g)))];
+      b=curves.blue[Math.max(0,Math.min(255,Math.round(b)))];
       if(s.hue||s.saturation||hslActive){
         let [hue,sat,light]=rgbHsl(Math.max(0,Math.min(255,r))/255,Math.max(0,Math.min(255,g))/255,Math.max(0,Math.min(255,b))/255);
         hue=(hue+s.hue+360)%360; sat=Math.max(0,Math.min(1,sat*(1+s.saturation/100)));
@@ -87,7 +115,7 @@ function processPixels(data,w,h,s) {
       lum=(r*.2126+g*.7152+b*.0722)/255;
       const zw=[1-smooth(.18,.52,lum),1-Math.abs(smooth(.08,.55,lum)-smooth(.48,.92,lum)),smooth(.45,.88,lum)];
       for(let k=0;k<3;k++){const wheel=zones[k],amount=wheel.amount*zw[k]*.38,color=wheelRgb[k];r=r*(1-amount)+color[0]*255*amount;g=g*(1-amount)+color[1]*255*amount;b=b*(1-amount)+color[2]*255*amount;const lift=wheel.luminance*zw[k]*.42;r+=lift;g+=lift;b+=lift;}
-      if(vig){const nx=x/Math.max(1,w-1)*2-1,rad=Math.sqrt(nx*nx+ny*ny)/Math.SQRT2,edge=Math.max(0,Math.min(1,(rad-start)/(1-start))),v=1-vig*(edge**falloff)*.72;r*=v;g*=v;b*=v;}
+      if(vig){const nx=x/Math.max(1,w-1)*2-1,circle=Math.sqrt(nx*nx+ny*ny)/Math.SQRT2,square=Math.max(Math.abs(nx),Math.abs(ny)),rad=square*(1-roundness)+circle*roundness,edge=Math.max(0,Math.min(1,(rad-start)/(1-start))),v=1-vig*(edge**falloff)*.72;r*=v;g*=v;b*=v;}
       data[i]=Math.max(0,Math.min(255,r));data[i+1]=Math.max(0,Math.min(255,g));data[i+2]=Math.max(0,Math.min(255,b));
     }
   }
@@ -107,9 +135,10 @@ async function rawImage(item, preview) {
 }
 async function render(item, settings, preview, format) {
   const {data,info}=await rawImage(item,preview), pixels=Buffer.from(data); processPixels(pixels,info.width,info.height,cleanSettings(settings));
+  const histogram=preview?histogramHeader(pixels):undefined;
   let output=sharp(pixels,{raw:{width:info.width,height:info.height,channels:info.channels}});
   output=format==='jpeg'?output.flatten({background:'#11110f'}).jpeg({quality:94,mozjpeg:true}):output.png({compressionLevel:6});
-  return {buffer:await output.toBuffer(),width:info.width,height:info.height};
+  return {buffer:await output.toBuffer(),width:info.width,height:info.height,histogram};
 }
 async function api(req,res,url) {
   if(req.method==='POST'&&url==='/api/upload'){
@@ -129,9 +158,9 @@ async function api(req,res,url) {
     item.created=Date.now();
     try{
       let result; const isPreview=url==='/api/preview'; const isOriginal=isPreview&&body.original;
-      if(isOriginal){const {data,info}=await sharp(item.buffer,{limitInputPixels:MAX_PIXELS,failOn:'warning'}).rotate().resize({width:1400,height:1000,fit:'inside',withoutEnlargement:true}).jpeg({quality:88}).toBuffer({resolveWithObject:true});result={buffer:data,width:info.width,height:info.height};}
+      if(isOriginal){const {data,info}=await rawImage(item,true),histogram=histogramHeader(data),buffer=await sharp(data,{raw:{width:info.width,height:info.height,channels:info.channels}}).jpeg({quality:88}).toBuffer();result={buffer,width:info.width,height:info.height,histogram};}
       else result=await render(item,body.settings,isPreview,isPreview||body.format==='jpeg'?'jpeg':'png');
-      const type=(isPreview||body.format==='jpeg')?'image/jpeg':'image/png';res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store','X-Image-Width':result.width,'X-Image-Height':result.height});return res.end(result.buffer);
+      const type=(isPreview||body.format==='jpeg')?'image/jpeg':'image/png';res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store','X-Image-Width':result.width,'X-Image-Height':result.height,'X-Histogram':result.histogram||''});return res.end(result.buffer);
     }catch(e){console.error('Pemrosesan gambar gagal:',e.message);return json(res,422,{error:'Server tidak dapat memproses foto ini.'});}
   }
   return json(res,404,{error:'API tidak ditemukan.'});
