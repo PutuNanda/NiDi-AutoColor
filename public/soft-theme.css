@@ -6,9 +6,35 @@
   --text: #f0f0f5;
   --muted: #9699b1;
   --lime: #9584ff;
+  --edit-panel-width: 365px;
 }
 
 body, .workspace { background: #121420; color: #f0f0f5; }
+.app-shell { position: relative; }
+.editor-layout { grid-template-columns: minmax(0, 1fr) var(--edit-panel-width); }
+.workspace { padding-top: 62px; }
+.floating-brand, .floating-actions {
+  position: absolute;
+  z-index: 10;
+  top: 14px;
+  display: flex;
+  align-items: center;
+  border: 1px solid #363950;
+  border-radius: 13px;
+  background: #191b2ddd;
+  box-shadow: 0 8px 28px #090a1480;
+  backdrop-filter: blur(16px);
+}
+.floating-brand { left: 18px; padding: 7px 11px; }
+.floating-brand .brand { width: auto; gap: 9px; }
+.floating-brand .brand-mark { width: 23px; height: 23px; }
+.floating-brand .brand-copy strong { font-size: 17px; }
+.floating-brand .brand-copy small { font-size: 7px; }
+.floating-actions { right: calc(var(--edit-panel-width) + 18px); gap: 7px; padding: 6px; }
+.floating-actions .button { height: 35px; border-radius: 8px; }
+.floating-actions .button-primary { padding-inline: 13px; }
+.floating-actions .button-quiet { padding-inline: 11px; }
+.floating-actions .button:disabled { opacity: .46; }
 .topbar, .edit-panel { background: #151726; }
 .topbar, .edit-panel, .tab-list, .panel-bottom { border-color: #2e3149; }
 .photo-stage {
@@ -177,11 +203,27 @@ body, .workspace { background: #121420; color: #f0f0f5; }
 .curve-axis { margin-top: 10px; }
 
 @media (max-width: 700px) {
+  :root { --edit-panel-width: 0px; }
+  .editor-layout { grid-template-columns: minmax(0, 1fr); }
+  .workspace { padding-top: 58px; }
+  .floating-brand, .floating-actions { top: 10px; }
+  .floating-brand { left: 11px; padding: 6px 8px; }
+  .floating-actions { right: 11px; }
+  .floating-actions .button { height: 33px; padding-inline: 9px; }
   .setting-accordion > summary { padding: 12px; }
   #wheel-controls { gap: 6px; }
   .color-wheel { width: 72px; height: 72px; }
 }
+@media (min-width: 1500px) { :root { --edit-panel-width: 390px; } }
+@media (min-width: 701px) and (max-width: 900px) { :root { --edit-panel-width: 330px; } }
 @media (max-width: 380px) {
+  .floating-brand { padding: 5px 6px; }
+  .floating-brand .brand { gap: 6px; }
+  .floating-brand .brand-mark { width: 19px; height: 19px; }
+  .floating-brand .brand-copy strong { font-size: 15px; }
+  .floating-actions { gap: 4px; padding: 4px; }
+  .floating-actions .button { height: 31px; padding-inline: 7px; font-size: 10px; }
+  .floating-actions .button-icon { font-size: 15px; }
   .color-wheel { width: 62px; height: 62px; }
   .wheel-card { padding-inline: 5px; }
   .hsl-swatches { gap: 8px; }

@@ -16,6 +16,12 @@ setInterval(() => {
 }, 60_000).unref();
 const bands = ['red', 'orange', 'yellow', 'green', 'aqua', 'blue', 'purple', 'magenta'];
 const bandHue = [0, 30, 60, 120, 180, 220, 275, 325];
+const OUTPUT_MIME = { jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', avif: 'image/avif', tiff: 'image/tiff', gif: 'image/gif' };
+const OUTPUT_EXTENSION = { jpeg: 'jpg', png: 'png', webp: 'webp', avif: 'avif', tiff: 'tiff', gif: 'gif' };
+function chooseOutputFormat(meta) {
+  if (meta.format === 'heif') return meta.compression === 'av1' ? 'avif' : 'jpeg';
+  return Object.hasOwn(OUTPUT_MIME, meta.format) ? meta.format : 'png';
+}
 
 function json(res, status, value) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
@@ -137,8 +143,13 @@ async function render(item, settings, preview, format) {
   const {data,info}=await rawImage(item,preview), pixels=Buffer.from(data); processPixels(pixels,info.width,info.height,cleanSettings(settings));
   const histogram=preview?histogramHeader(pixels):undefined;
   let output=sharp(pixels,{raw:{width:info.width,height:info.height,channels:info.channels}});
-  output=format==='jpeg'?output.flatten({background:'#11110f'}).jpeg({quality:94,mozjpeg:true}):output.png({compressionLevel:6});
-  return {buffer:await output.toBuffer(),width:info.width,height:info.height,histogram};
+  if(format==='jpeg')output=output.flatten({background:'#11110f'}).jpeg({quality:94,mozjpeg:true});
+  else if(format==='webp')output=output.webp({quality:94});
+  else if(format==='avif')output=output.avif({quality:78,effort:4});
+  else if(format==='tiff')output=output.tiff({quality:94,compression:'lzw'});
+  else if(format==='gif')output=output.gif({effort:5});
+  else output=output.png({compressionLevel:6});
+  return {buffer:await output.toBuffer(),width:info.width,height:info.height,histogram,format};
 }
 async function api(req,res,url) {
   if(req.method==='POST'&&url==='/api/upload'){
@@ -150,7 +161,9 @@ async function api(req,res,url) {
     for(const [id,item] of images)if(Date.now()-item.created>TTL)images.delete(id);
     while(images.size>=8)images.delete(images.keys().next().value);
     const id=randomUUID(),name=path.basename(String(req.headers['x-file-name']||'foto').slice(0,200)).replace(/[\r\n"\\]/g,'')||'foto';
-    images.set(id,{buffer,name,created:Date.now()});return json(res,201,{imageId:id,width:swap?meta.height:meta.width,height:swap?meta.width:meta.height});
+    const outputFormat=chooseOutputFormat(meta),outputExtension=OUTPUT_EXTENSION[outputFormat];
+    images.set(id,{buffer,name,outputFormat,outputExtension,created:Date.now()});
+    return json(res,201,{imageId:id,width:swap?meta.height:meta.width,height:swap?meta.width:meta.height,outputExtension});
   }
   if(req.method==='POST'&&(url==='/api/preview'||url==='/api/export')){
     let body;try{body=JSON.parse((await readBody(req,1024*1024)).toString());}catch(e){return json(res,e.status||400,{error:'Permintaan edit tidak valid.'});}
@@ -158,9 +171,12 @@ async function api(req,res,url) {
     item.created=Date.now();
     try{
       let result; const isPreview=url==='/api/preview'; const isOriginal=isPreview&&body.original;
-      if(isOriginal){const {data,info}=await rawImage(item,true),histogram=histogramHeader(data),buffer=await sharp(data,{raw:{width:info.width,height:info.height,channels:info.channels}}).jpeg({quality:88}).toBuffer();result={buffer,width:info.width,height:info.height,histogram};}
-      else result=await render(item,body.settings,isPreview,isPreview||body.format==='jpeg'?'jpeg':'png');
-      const type=(isPreview||body.format==='jpeg')?'image/jpeg':'image/png';res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store','X-Image-Width':result.width,'X-Image-Height':result.height,'X-Histogram':result.histogram||''});return res.end(result.buffer);
+      if(isOriginal){const {data,info}=await rawImage(item,true),histogram=histogramHeader(data),buffer=await sharp(data,{raw:{width:info.width,height:info.height,channels:info.channels}}).jpeg({quality:88}).toBuffer();result={buffer,width:info.width,height:info.height,histogram,format:'jpeg'};}
+      else result=await render(item,body.settings,isPreview,isPreview?'jpeg':item.outputFormat);
+      const type=OUTPUT_MIME[result.format]||'image/png';
+      const headers={'Content-Type':type,'Cache-Control':'no-store','X-Image-Width':result.width,'X-Image-Height':result.height,'X-Histogram':result.histogram||''};
+      if(!isPreview){headers['X-Output-Extension']=item.outputExtension;headers['Content-Disposition']=`attachment; filename="NiDi-AutoColor.${item.outputExtension}"`;}
+      res.writeHead(200,headers);return res.end(result.buffer);
     }catch(e){console.error('Pemrosesan gambar gagal:',e.message);return json(res,422,{error:'Server tidak dapat memproses foto ini.'});}
   }
   return json(res,404,{error:'API tidak ditemukan.'});

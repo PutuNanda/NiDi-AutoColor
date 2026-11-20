@@ -11,19 +11,17 @@
 </head>
 <body>
   <div class="app-shell">
-    <header class="topbar">
+    <div class="floating-brand">
       <a class="brand" href="/" aria-label="NiDi AutoColor home">
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
         <span class="brand-copy"><strong>nidi</strong><small>AUTOCOLOR</small></span>
       </a>
-      <div class="topbar-center"><span class="status-light"></span><span>PHOTO LAB</span><span class="server-badge">SERVER PROCESSING</span></div>
-      <div class="topbar-actions">
-        <input id="file-input" type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/tiff,image/gif" hidden>
-        <button id="import-button" class="button button-quiet" type="button"><span class="button-icon">＋</span> Impor foto</button>
-        <label class="format-select" for="export-format"><span>Format</span><select id="export-format" aria-label="Format ekspor"><option value="png">PNG</option><option value="jpeg">JPG</option></select></label>
-        <button id="export-button" class="button button-primary" type="button" disabled><span>Ekspor</span><span class="export-arrow">↗</span></button>
-      </div>
-    </header>
+    </div>
+    <div class="floating-actions">
+      <input id="file-input" type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/tiff,image/gif" hidden>
+      <button id="import-button" class="button button-quiet" type="button"><span class="button-icon">＋</span> Impor foto</button>
+      <button id="export-button" class="button button-primary" type="button" disabled><span>Ekspor</span><span class="export-arrow">↗</span></button>
+    </div>
     <main class="editor-layout">
       <section class="workspace" aria-label="Area pratinjau foto">
         <div class="workspace-toolbar">

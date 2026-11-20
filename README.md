@@ -14,6 +14,6 @@ Editor foto sederhana dengan seluruh pemrosesan gambar berjalan di server menggu
 - Impor foto JPG, PNG, WebP, AVIF, GIF, dan TIFF hingga 35 MB.
 - Koreksi suhu warna, tint, kontras, kecerahan, exposure, highlights, shadows, whites, blacks, saturation, hue, texture, clarity, dan vignette.
 - Penyesuaian HSL untuk delapan rentang warna, kurva tonal yang dapat ditarik, dan roda warna shadows/midtones/highlights.
-- Pratinjau hasil edit dan ekspor PNG atau JPG pada resolusi asli.
+- Pratinjau hasil edit dan ekspor pada resolusi asli dengan format sumber (JPEG, PNG, WebP, AVIF, TIFF, atau GIF). HEIF/HEIC dikonversi ke AVIF atau JPEG sesuai codec sumber.
 
 Foto asli disimpan sementara di memori server dan dibersihkan setelah 30 menit tidak aktif. Maksimal delapan foto aktif disimpan sekaligus. Foto tidak disimpan ke disk.

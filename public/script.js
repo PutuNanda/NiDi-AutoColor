@@ -46,6 +46,7 @@
   let state = freshState();
   let imageId = '';
   let currentFileName = '';
+  let currentOutputExtension = 'png';
   let previewUrl = '';
   let originalUrl = '';
   let debounceTimer = 0;
@@ -357,6 +358,7 @@
       if (previewController) previewController.abort(); clearTimeout(debounceTimer);
       if (previewUrl) URL.revokeObjectURL(previewUrl); if (originalUrl) URL.revokeObjectURL(originalUrl);
       previewUrl = ''; originalUrl = ''; imageId = result.imageId; currentFileName = file.name; state = freshState(); isComparing = false;
+      currentOutputExtension = result.outputExtension || 'png';
       selectedCurveChannel = 'master'; selectedHslBand = 'red';
       $('#photo-name').textContent = file.name; $('#photo-dimensions').textContent = `${result.width.toLocaleString('id-ID')} × ${result.height.toLocaleString('id-ID')}`;
       emptyState.hidden = true; preview.hidden = true; previewLoading.querySelector('strong').textContent = 'Memproses foto di server…'; previewLoading.hidden = false;
@@ -369,17 +371,18 @@
   }
   async function exportImage() {
     if (!imageId) return;
-    const activeId = imageId; const format = $('#export-format').value;
+    const activeId = imageId;
     exportButton.disabled = true; setStatus('Ekspor ukuran penuh…', true);
     try {
       const response = await fetch('/api/export', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageId: activeId, settings: state, format }),
+        body: JSON.stringify({ imageId: activeId, settings: state }),
       });
       if (!response.ok) throw new Error((await response.json()).error || 'Ekspor gagal.');
+      const extension = response.headers.get('X-Output-Extension') || currentOutputExtension;
       const blob = await response.blob(); const href = URL.createObjectURL(blob); const link = document.createElement('a');
       const stem = (currentFileName.replace(/\.[^.]+$/, '') || 'foto').replace(/[\\/:*?"<>|]/g, '-');
-      link.href = href; link.download = `${stem}-nidi.${format === 'jpeg' ? 'jpg' : 'png'}`; document.body.append(link); link.click(); link.remove(); URL.revokeObjectURL(href);
+      link.href = href; link.download = `${stem}-nidi.${extension}`; document.body.append(link); link.click(); link.remove(); URL.revokeObjectURL(href);
       setStatus('Ekspor selesai'); showToast('Foto hasil edit berhasil diekspor.');
     } catch (error) { setStatus('Ekspor gagal'); showToast(error.message); }
     finally { exportButton.disabled = false; }
