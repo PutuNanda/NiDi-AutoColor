@@ -134,13 +134,11 @@ function processPixels(data,w,h,s) {
     }
   }
 }
-async function rawImage(item, preview) {
-  let p=sharp(item.buffer,{limitInputPixels:MAX_PIXELS,failOn:'warning'}).rotate().ensureAlpha();
-  if(preview)p=p.resize({width:1400,height:1000,fit:'inside',withoutEnlargement:true});
-  return p.raw().toBuffer({resolveWithObject:true});
+async function rawImage(item) {
+  return sharp(item.buffer,{limitInputPixels:MAX_PIXELS,failOn:'warning'}).rotate().ensureAlpha().raw().toBuffer({resolveWithObject:true});
 }
 async function render(item, settings, preview, format) {
-  const {data,info}=await rawImage(item,preview), pixels=Buffer.from(data); processPixels(pixels,info.width,info.height,cleanSettings(settings));
+  const {data,info}=await rawImage(item), pixels=Buffer.from(data); processPixels(pixels,info.width,info.height,cleanSettings(settings));
   const histogram=preview?histogramHeader(pixels):undefined;
   let output=sharp(pixels,{raw:{width:info.width,height:info.height,channels:info.channels}});
   if(format==='jpeg')output=output.flatten({background:'#11110f'}).jpeg({quality:94,mozjpeg:true});
@@ -148,7 +146,7 @@ async function render(item, settings, preview, format) {
   else if(format==='avif')output=output.avif({quality:78,effort:4});
   else if(format==='tiff')output=output.tiff({quality:94,compression:'lzw'});
   else if(format==='gif')output=output.gif({effort:5});
-  else output=output.png({compressionLevel:6});
+  else output=output.png({compressionLevel:preview?3:6});
   return {buffer:await output.toBuffer(),width:info.width,height:info.height,histogram,format};
 }
 async function api(req,res,url) {
@@ -171,8 +169,8 @@ async function api(req,res,url) {
     item.created=Date.now();
     try{
       let result; const isPreview=url==='/api/preview'; const isOriginal=isPreview&&body.original;
-      if(isOriginal){const {data,info}=await rawImage(item,true),histogram=histogramHeader(data),buffer=await sharp(data,{raw:{width:info.width,height:info.height,channels:info.channels}}).jpeg({quality:88}).toBuffer();result={buffer,width:info.width,height:info.height,histogram,format:'jpeg'};}
-      else result=await render(item,body.settings,isPreview,isPreview?'jpeg':item.outputFormat);
+      if(isOriginal){const {data,info}=await rawImage(item),histogram=histogramHeader(data),buffer=await sharp(data,{raw:{width:info.width,height:info.height,channels:info.channels}}).png({compressionLevel:3}).toBuffer();result={buffer,width:info.width,height:info.height,histogram,format:'png'};}
+      else result=await render(item,body.settings,isPreview,isPreview?'png':item.outputFormat);
       const type=OUTPUT_MIME[result.format]||'image/png';
       const headers={'Content-Type':type,'Cache-Control':'no-store','X-Image-Width':result.width,'X-Image-Height':result.height,'X-Histogram':result.histogram||''};
       if(!isPreview){headers['X-Output-Extension']=item.outputExtension;headers['Content-Disposition']=`attachment; filename="NiDi-AutoColor.${item.outputExtension}"`;}

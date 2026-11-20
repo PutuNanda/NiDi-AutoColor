@@ -579,9 +579,10 @@
   for (const type of ['dragleave', 'drop']) dropZone.addEventListener(type, event => { event.preventDefault(); dropOverlay.hidden = true; dropZone.classList.remove('is-dragging'); });
   dropZone.addEventListener('drop', event => importFile(event.dataTransfer.files[0]));
   dropZone.addEventListener('wheel', event => {
-    if (!event.ctrlKey || !imageId) return;
+    if (!imageId) return;
     event.preventDefault();
-    setZoom(zoomLevel * (event.deltaY < 0 ? 1.12 : 1 / 1.12), event);
+    const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? dropZone.clientHeight : 1);
+    setZoom(zoomLevel * Math.exp(-delta * .0015), event);
   }, { passive: false });
   preview.addEventListener('dragstart', event => event.preventDefault());
   dropZone.addEventListener('pointerdown', event => {
