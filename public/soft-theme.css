@@ -58,6 +58,21 @@ body, .workspace { background: #121420; color: #f0f0f5; }
 .photo-stage.has-image { min-height: 0; max-width: 100%; flex: none; align-self: center; cursor: grab; touch-action: none; }
 .photo-stage.has-image.is-panning { cursor: grabbing; }
 .photo-stage.has-image #photo-preview { user-select: none; -webkit-user-drag: none; }
+.reset-view-button {
+  width: 27px;
+  height: 27px;
+  flex: none;
+  padding: 0;
+  border: 1px solid #383b56;
+  border-radius: 7px;
+  color: #c4c5d5;
+  background: #1c1e30;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.reset-view-button:hover:not(:disabled) { color: #fff; border-color: #8170d7; background: #2a2d45; }
+.reset-view-button:disabled { opacity: .4; cursor: not-allowed; }
 .zoom-indicator {
   position: absolute;
   z-index: 3;

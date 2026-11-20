@@ -433,6 +433,11 @@
     if (oldWidth && oldHeight) { panX *= width / oldWidth; panY *= height / oldHeight; }
     updatePreviewTransform();
   }
+  function resetCanvasView() {
+    if (!imageId) return;
+    fitCanvasToViewport();
+    setZoom(1);
+  }
   function setZoom(value, event) {
     const nextZoom = Math.max(.25, Math.min(5, value));
     if (event) {
@@ -513,7 +518,7 @@
       selectedCurveChannel = 'master'; selectedHslBand = 'red';
       $('#photo-name').textContent = file.name; $('#photo-dimensions').textContent = `${result.width.toLocaleString('id-ID')} × ${result.height.toLocaleString('id-ID')}`;
       emptyState.hidden = true; preview.hidden = true; previewLoading.querySelector('strong').textContent = 'Memproses foto di server…'; previewLoading.hidden = false;
-      exportButton.disabled = false; compareButton.disabled = false; $('#reset-button').disabled = false;
+      exportButton.disabled = false; compareButton.disabled = false; $('#reset-view-button').disabled = false; $('#reset-button').disabled = false;
       buildControls(); setStatus('Foto tersimpan di server');
       void loadOriginalPreview(imageId).catch(error => showToast(error.message));
       queuePreview(0);
@@ -554,6 +559,7 @@
   fileInput.addEventListener('change', () => importFile(fileInput.files[0]));
   exportButton.addEventListener('click', exportImage);
   $('#reset-button').addEventListener('click', resetEdits);
+  $('#reset-view-button').addEventListener('click', resetCanvasView);
   $('#reset-curve').addEventListener('click', () => { state.curves[selectedCurveChannel] = [{ x: 0, y: 0 }, { x: 1, y: 1 }]; updateCurve(); queuePreview(); });
   compareButton.addEventListener('pointerdown', event => { event.preventDefault(); toggleCompare(true); });
   for (const type of ['pointerup', 'pointercancel', 'pointerleave']) compareButton.addEventListener(type, () => toggleCompare(false));
