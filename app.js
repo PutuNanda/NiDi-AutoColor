@@ -179,7 +179,7 @@ async function api(req,res,url) {
   }
   return json(res,404,{error:'API tidak ditemukan.'});
 }
-const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.ico':'image/x-icon'};
+const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.wasm':'application/wasm','.svg':'image/svg+xml','.ico':'image/x-icon'};
 function staticFile(req,res,pathname){let decoded;try{decoded=decodeURIComponent(pathname);}catch{res.writeHead(400);return res.end('Bad request');}
   const file=path.resolve(PUBLIC_DIR,decoded==='/'?'index.html':decoded.replace(/^\/+/,'')),prefix=PUBLIC_DIR+path.sep;
   if(file.toLowerCase()!==PUBLIC_DIR.toLowerCase()&&!file.toLowerCase().startsWith(prefix.toLowerCase())){res.writeHead(403);return res.end('Forbidden');}

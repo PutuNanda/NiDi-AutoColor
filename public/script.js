@@ -46,12 +46,16 @@
   let state = freshState();
   let imageId = '';
   let currentFileName = '';
-  let currentOutputExtension = 'png';
   let previewUrl = '';
   let originalUrl = '';
-  let debounceTimer = 0;
-  let previewController = null;
+  let previewTimer = 0;
+  let previewFrame = 0;
+  let lastRenderStarted = 0;
+  let isExporting = false;
+  let previewQueued = false;
+  let importNumber = 0;
   let renderNumber = 0;
+  const renderer = window.NiDiRender.create();
   let toastTimer = 0;
   let isComparing = false;
   let curveDragIndex = -1;
@@ -456,102 +460,110 @@
     preview.style.transformOrigin = '50% 50%';
     preview.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
   }
-  function queuePreview(delay = 130) {
+  function queuePreview() {
     if (!imageId || isComparing) return;
-    clearTimeout(debounceTimer); debounceTimer = setTimeout(renderPreview, delay);
+    if (isExporting) { previewQueued = true; return; }
+    if (previewFrame || previewTimer) return;
+    const wait = Math.max(0, 45 - (performance.now() - lastRenderStarted));
+    if (wait) {
+      previewTimer = setTimeout(() => { previewTimer = 0; schedulePreviewFrame(); }, wait);
+      return;
+    }
+    schedulePreviewFrame();
+  }
+  function schedulePreviewFrame() {
+    if (previewFrame || !imageId || isComparing || isExporting) return;
+    previewFrame = requestAnimationFrame(() => {
+      previewFrame = 0;
+      lastRenderStarted = performance.now();
+      void renderPreview();
+    });
   }
   async function renderPreview() {
-    if (!imageId || isComparing) return;
-    clearTimeout(debounceTimer);
-    if (previewController) previewController.abort();
-    previewController = new AbortController();
-    const controller = previewController; const activeId = imageId; const version = ++renderNumber;
-    setStatus('Merender di server…', true);
+    if (!imageId || isComparing || isExporting) return;
+    const activeId = imageId;
+    const version = ++renderNumber;
+    setStatus('Merender di perangkat…', true);
     try {
-      const response = await fetch('/api/preview', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
-        body: JSON.stringify({ imageId: activeId, settings: state }),
-      });
-      if (!response.ok) throw new Error((await response.json()).error || 'Pratinjau gagal dibuat.');
-      const histogram = response.headers.get('X-Histogram');
-      const url = URL.createObjectURL(await response.blob());
-      if (version !== renderNumber || activeId !== imageId || isComparing) { URL.revokeObjectURL(url); return; }
-      if (histogram) updateHistogram(histogram.split(',').map(Number));
-      setPreviewUrl(url); preview.hidden = false; previewLoading.hidden = true; setStatus('Pratinjau diperbarui');
+      const result = await renderer.render(state, { maxDimension: 1600, typeHint: 'image/png' });
+      if (!result || version !== renderNumber || activeId !== imageId || isComparing) return;
+      updateHistogram(result.histogram);
+      setPreviewUrl(URL.createObjectURL(result.blob));
+      preview.hidden = false; previewLoading.hidden = true;
+      setStatus('Pratinjau diperbarui');
     } catch (error) {
-      if (error.name === 'AbortError') return;
+      if (version !== renderNumber || activeId !== imageId) return;
       setStatus('Gagal merender');
-      if (!previewUrl) { previewLoading.querySelector('strong').textContent = 'Pratinjau gagal dibuat. Coba impor ulang foto.'; previewLoading.hidden = false; }
+      if (!previewUrl) {
+        previewLoading.querySelector('strong').textContent = 'Pratinjau gagal dibuat. Coba buka ulang foto.';
+        previewLoading.hidden = false;
+      }
       showToast(error.message);
     }
   }
-  async function loadOriginalPreview(activeId) {
-    const response = await fetch('/api/preview', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageId: activeId, original: true }),
-    });
-    if (!response.ok) throw new Error('Pratinjau asli tidak dapat dimuat.');
-    const histogram = response.headers.get('X-Histogram');
-    const url = URL.createObjectURL(await response.blob());
-    if (activeId !== imageId) { URL.revokeObjectURL(url); return; }
-    if (histogram) updateHistogram(histogram.split(',').map(Number));
-    if (originalUrl) URL.revokeObjectURL(originalUrl);
-    originalUrl = url;
-    if (isComparing) { preview.src = originalUrl; preview.hidden = false; previewLoading.hidden = true; }
-  }
   async function importFile(file) {
     if (!file) return;
-    if (!file.type.startsWith('image/')) return showToast('Pilih file gambar untuk diimpor.');
-    if (file.size > 35 * 1024 * 1024) return showToast('Ukuran foto maksimal 35 MB.');
-    importButton.disabled = true; setStatus('Mengirim foto ke server…', true);
+    if (!window.NiDiRender.supports(file)) return showToast('Pilih file foto atau gambar yang didukung.');
+    const activeImport = ++importNumber;
+    importButton.disabled = true; setStatus('Membuka foto di perangkat…', true);
     try {
-      const response = await fetch('/api/upload', {
-        method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) }, body: file,
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Foto gagal diunggah.');
-      if (previewController) previewController.abort(); clearTimeout(debounceTimer);
+      const result = await renderer.load(file);
+      if (!result || activeImport !== importNumber) return;
+      clearTimeout(previewTimer); previewTimer = 0;
+      if (previewFrame) cancelAnimationFrame(previewFrame); previewFrame = 0;
+      renderNumber++;
       if (previewUrl) URL.revokeObjectURL(previewUrl); if (originalUrl) URL.revokeObjectURL(originalUrl);
-      previewUrl = ''; originalUrl = ''; imageId = result.imageId; currentFileName = file.name; state = freshState(); isComparing = false;
-      currentOutputExtension = result.outputExtension || 'png';
+      previewUrl = ''; originalUrl = ''; imageId = `local-${activeImport}`; currentFileName = file.name; state = freshState(); isComparing = false;
+      originalUrl = URL.createObjectURL(file);
       photoWidth = result.width; photoHeight = result.height; setZoom(1); fitCanvasToViewport(); zoomIndicator.hidden = false;
       selectedCurveChannel = 'master'; selectedHslBand = 'red';
       $('#photo-name').textContent = file.name; $('#photo-dimensions').textContent = `${result.width.toLocaleString('id-ID')} × ${result.height.toLocaleString('id-ID')}`;
-      emptyState.hidden = true; preview.hidden = true; previewLoading.querySelector('strong').textContent = 'Memproses foto di server…'; previewLoading.hidden = false;
+      emptyState.hidden = true; preview.src = originalUrl; preview.hidden = false;
+      previewLoading.querySelector('strong').textContent = 'Menerapkan edit di perangkat…'; previewLoading.hidden = true;
       exportButton.disabled = false; compareButton.disabled = false; $('#reset-view-button').disabled = false; $('#reset-button').disabled = false;
-      buildControls(); setStatus('Foto tersimpan di server');
-      void loadOriginalPreview(imageId).catch(error => showToast(error.message));
+      buildControls(); setStatus('Foto dibuka di perangkat');
       queuePreview(0);
-    } catch (error) { setStatus('Impor gagal'); showToast(error.message); }
-    finally { importButton.disabled = false; fileInput.value = ''; }
+    } catch (error) {
+      if (activeImport === importNumber) { setStatus('Impor gagal'); showToast(error.message); }
+    } finally {
+      if (activeImport === importNumber) { importButton.disabled = false; fileInput.value = ''; }
+    }
   }
   async function exportImage() {
     if (!imageId) return;
-    const activeId = imageId;
-    exportButton.disabled = true; setStatus('Ekspor ukuran penuh…', true);
+    exportButton.disabled = true; isExporting = true; previewQueued = false;
+    setStatus('Mengekspor ukuran penuh di perangkat…', true);
     try {
-      const response = await fetch('/api/export', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageId: activeId, settings: state }),
+      const result = await renderer.render(structuredClone(state), {
+        width: photoWidth, height: photoHeight, typeHint: 'image/png',
       });
-      if (!response.ok) throw new Error((await response.json()).error || 'Ekspor gagal.');
-      const extension = response.headers.get('X-Output-Extension') || currentOutputExtension;
-      const blob = await response.blob(); const href = URL.createObjectURL(blob); const link = document.createElement('a');
+      if (!result) throw new Error('Ekspor dibatalkan. Coba lagi.');
+      const href = URL.createObjectURL(result.blob);
+      if (!isComparing) {
+        setPreviewUrl(href); preview.hidden = false; previewLoading.hidden = true;
+        updateHistogram(result.histogram);
+      }
+      const link = document.createElement('a');
       const stem = (currentFileName.replace(/\.[^.]+$/, '') || 'foto').replace(/[\\/:*?"<>|]/g, '-');
-      link.href = href; link.download = `${stem}-nidi.${extension}`; document.body.append(link); link.click(); link.remove(); URL.revokeObjectURL(href);
-      setStatus('Ekspor selesai'); showToast('Foto hasil edit berhasil diekspor.');
+      link.href = href; link.download = `${stem}-nidi.png`; document.body.append(link); link.click(); link.remove();
+      if (isComparing) setTimeout(() => URL.revokeObjectURL(href), 1000);
+      setStatus('Ekspor selesai'); showToast('Foto hasil edit berhasil diekspor di perangkat.');
     } catch (error) { setStatus('Ekspor gagal'); showToast(error.message); }
-    finally { exportButton.disabled = false; }
+    finally {
+      isExporting = false; exportButton.disabled = false;
+      if (previewQueued) { previewQueued = false; queuePreview(); }
+    }
   }
-  function resetEdits() { state = freshState(); buildControls(); queuePreview(0); }
+  function resetEdits() { state = freshState(); buildControls(); queuePreview(); }
   function toggleCompare(active) {
     if (!imageId || isComparing === active) return;
     isComparing = active; compareButton.classList.toggle('is-active', active);
     if (active) {
-      clearTimeout(debounceTimer); if (previewController) previewController.abort();
+      clearTimeout(previewTimer); previewTimer = 0;
+      if (previewFrame) cancelAnimationFrame(previewFrame); previewFrame = 0;
+      renderNumber++;
       if (originalUrl) { preview.src = originalUrl; preview.hidden = false; previewLoading.hidden = true; setStatus('Foto asli'); }
-      else { setStatus('Memuat foto asli…', true); void loadOriginalPreview(imageId).catch(error => showToast(error.message)); }
-    } else { setStatus('Memulihkan pratinjau…', true); queuePreview(0); }
+    } else { setStatus('Memulihkan pratinjau…', true); queuePreview(); }
   }
 
   importButton.addEventListener('click', () => fileInput.click());
@@ -618,7 +630,11 @@
   window.addEventListener('resize', fitCanvasToViewport);
   document.addEventListener('dragover', event => event.preventDefault());
   document.addEventListener('drop', event => event.preventDefault());
-  window.addEventListener('beforeunload', () => { if (previewUrl) URL.revokeObjectURL(previewUrl); if (originalUrl) URL.revokeObjectURL(originalUrl); });
+  window.addEventListener('beforeunload', () => {
+    renderer.destroy();
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    if (originalUrl) URL.revokeObjectURL(originalUrl);
+  });
 
   buildControls();
 })();

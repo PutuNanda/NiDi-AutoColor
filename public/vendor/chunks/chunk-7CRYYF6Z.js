@@ -1,0 +1,545 @@
+// node_modules/flashraw/dist/errors.js
+var FlashRawError = class extends Error {
+  /**
+   * @param {string} message
+   * @param {string} [kind]
+   * @param {{ cause?: unknown, corrupt?: object | null }} [options]
+   */
+  constructor(message, kind = "Internal", options) {
+    super(message, options);
+    this.name = "FlashRawError";
+    this.kind = kind;
+    if (options?.corrupt) this.corrupt = options.corrupt;
+  }
+  toJSON() {
+    const o = { name: this.name, kind: this.kind, message: this.message };
+    if (this.corrupt) o.corrupt = this.corrupt;
+    return o;
+  }
+};
+function define(kind) {
+  const name = `${kind}Error`;
+  const cls = {
+    [name]: class extends FlashRawError {
+      constructor(message, options) {
+        super(message, kind, options);
+        this.name = name;
+      }
+    }
+  }[name];
+  return cls;
+}
+var UnsupportedFormatError = define("UnsupportedFormat");
+var UnsupportedCompressionError = define("UnsupportedCompression");
+var CorruptFileError = define("CorruptFile");
+var InvalidMetadataError = define("InvalidMetadata");
+var CameraUnsupportedError = define("CameraUnsupported");
+var GpuUnavailableError = define("GpuUnavailable");
+var OutOfMemoryError = define("OutOfMemory");
+var LimitExceededError = define("LimitExceeded");
+var NotAvailableError = define("NotAvailable");
+var InvalidArgumentError = define("InvalidArgument");
+var IoError = define("Io");
+var ClosedError = define("Closed");
+var CancelledError = define("Cancelled");
+var InternalError = define("Internal");
+var BY_KIND = {
+  UnsupportedFormat: UnsupportedFormatError,
+  UnsupportedCompression: UnsupportedCompressionError,
+  CorruptFile: CorruptFileError,
+  InvalidMetadata: InvalidMetadataError,
+  CameraUnsupported: CameraUnsupportedError,
+  GpuUnavailable: GpuUnavailableError,
+  OutOfMemory: OutOfMemoryError,
+  LimitExceeded: LimitExceededError,
+  NotAvailable: NotAvailableError,
+  InvalidArgument: InvalidArgumentError,
+  Io: IoError,
+  Closed: ClosedError,
+  Cancelled: CancelledError,
+  Internal: InternalError
+};
+var ERROR_KINDS = Object.freeze(Object.keys(BY_KIND));
+function errorFromKind(kind, message, options) {
+  const cls = BY_KIND[kind];
+  return cls ? new cls(message, options) : new FlashRawError(message, kind, options);
+}
+function errorFromJSON(o) {
+  if (o && typeof o === "object" && typeof o.kind === "string") {
+    return errorFromKind(o.kind, String(o.message ?? ""), o.corrupt ? { corrupt: o.corrupt } : void 0);
+  }
+  return new InternalError(String(o?.message ?? o));
+}
+
+// node_modules/flashraw/dist/worker-protocol.js
+function transferablesOf(value) {
+  const out = [];
+  const visit = (v) => {
+    if (!v || typeof v !== "object") return;
+    if (ArrayBuffer.isView(v)) {
+      if (Object.prototype.toString.call(v.buffer) === "[object ArrayBuffer]") out.push(v.buffer);
+      return;
+    }
+    if (Array.isArray(v)) v.forEach(visit);
+  };
+  visit(value?.data);
+  return out;
+}
+function plainFrame(f) {
+  if (!f) return f;
+  const data = f.data;
+  return { ...f, data };
+}
+function withCancel(op, args) {
+  if (op === "oneshot" && args?.task === "decode") return { ...args, options: { ...args.options ?? {}, cancel: true } };
+  if (op === "call" && ["decode", "decodeRegion", "decodeTile"].includes(args?.method)) {
+    const a = [...args.args ?? []];
+    const last = args.method === "decode" ? 0 : 1;
+    a[last] = { ...a[last] ?? {}, cancel: true };
+    return { ...args, args: a };
+  }
+  return args;
+}
+function serve(api, port) {
+  const handles = /* @__PURE__ */ new Map();
+  let next = 1;
+  const ops = {
+    async init(args) {
+      return api.init(args ?? {});
+    },
+    async capabilities() {
+      return api.getCapabilities();
+    },
+    async detect({ input }) {
+      return api.detectFormat(input);
+    },
+    async oneshot({ task, input, options }) {
+      const o = { ...options ?? {}, zeroCopy: false };
+      switch (task) {
+        case "decode":
+          return plainFrame(await api.decodeRaw(input, o));
+        case "metadata":
+          return api.readMetadata(input, o);
+        case "preview":
+          return api.extractPreview(input, o);
+        case "thumbnail":
+          return api.extractThumbnail(input, o);
+        default:
+          throw new InvalidArgumentError(`unknown task ${JSON.stringify(task)}`);
+      }
+    },
+    async open({ input, options }) {
+      const raw = await api.FlashRaw.open(input, options);
+      const id = next++;
+      handles.set(id, raw);
+      return {
+        handle: id,
+        metadata: raw.metadata,
+        frameInfo: raw.frameInfo,
+        capabilities: raw.capabilities,
+        tiles: raw.tiles,
+        byteLength: raw.byteLength,
+        parseMs: raw.parseMs
+      };
+    },
+    async call({ handle, method, args }) {
+      const raw = handles.get(handle);
+      if (!raw) throw new ClosedError("remote FlashRaw handle is closed");
+      const a = args ?? [];
+      switch (method) {
+        case "decode":
+          return plainFrame(await raw.decode({ ...a[0] ?? {}, zeroCopy: false }));
+        case "decodeRegion":
+          return plainFrame(await raw.decodeRegion(a[0], { ...a[1] ?? {}, zeroCopy: false }));
+        case "decodeTile":
+          return plainFrame(await raw.decodeTile(a[0], { ...a[1] ?? {}, zeroCopy: false }));
+        case "preview":
+          return raw.preview({ ...a[0] ?? {}, zeroCopy: false });
+        case "thumbnail":
+          return raw.thumbnail({ ...a[0] ?? {}, zeroCopy: false });
+        case "exifBytes":
+          return raw.exifBytes();
+        case "xmpBytes":
+          return raw.xmpBytes();
+        default:
+          throw new InvalidArgumentError(`unknown method ${JSON.stringify(method)}`);
+      }
+    },
+    async close({ handle }) {
+      handles.get(handle)?.close();
+      handles.delete(handle);
+      return true;
+    }
+  };
+  port.listen(async (msg) => {
+    const { id, op, args, cancelFlag } = msg ?? {};
+    try {
+      const fn = ops[op];
+      if (!fn) throw new InvalidArgumentError(`unknown op ${JSON.stringify(op)}`);
+      if (cancelFlag) globalThis.__flashrawCancelFlag = new Int32Array(cancelFlag);
+      let result;
+      try {
+        result = await fn(cancelFlag ? withCancel(op, args) : args);
+      } finally {
+        if (cancelFlag) globalThis.__flashrawCancelFlag = void 0;
+      }
+      port.post({ id, ok: true, result }, transferablesOf(result));
+    } catch (e) {
+      const error = { kind: e?.kind ?? "Internal", message: e?.message ?? String(e), corrupt: e?.corrupt ?? null };
+      port.post({ id, ok: false, error });
+    }
+  });
+}
+var CANCEL_GRACE_MS = 500;
+var CANCELLABLE = (op, args) => op === "oneshot" && args?.task === "decode" || op === "call" && ["decode", "decodeRegion", "decodeTile"].includes(args?.method);
+var canShareFlag = () => typeof SharedArrayBuffer === "function" && typeof Atomics === "object" && globalThis.crossOriginIsolated !== false;
+function inputTransfer(input, transfer) {
+  if (!transfer) return [];
+  if (Object.prototype.toString.call(input) === "[object ArrayBuffer]") return [input];
+  if (ArrayBuffer.isView(input) && input.byteOffset === 0 && input.byteLength === input.buffer.byteLength) {
+    return [input.buffer];
+  }
+  return [];
+}
+function abortReason(signal) {
+  if (signal.reason !== void 0) return signal.reason;
+  if (typeof DOMException === "function") return new DOMException("This operation was aborted", "AbortError");
+  return Object.assign(new Error("the operation was aborted"), { name: "AbortError" });
+}
+function checkSignal(signal) {
+  if (signal === void 0 || signal === null) return null;
+  if (typeof signal !== "object" || typeof signal.addEventListener !== "function" || !("aborted" in signal)) {
+    throw new InvalidArgumentError("`signal` must be an AbortSignal");
+  }
+  return signal;
+}
+function splitOptions(options) {
+  if (!options || typeof options !== "object" || Array.isArray(options)) {
+    return { rest: options, signal: null, transfer: false };
+  }
+  const { signal, transfer, ...rest } = options;
+  return { rest, signal: checkSignal(signal), transfer: !!transfer };
+}
+var remoteFinalizer = typeof FinalizationRegistry === "function" ? new FinalizationRegistry(({ pool, slot, handle }) => {
+  pool._request(slot, "close", { handle }).catch(() => {
+  });
+}) : null;
+var RemoteFlashRaw = class {
+  #pool;
+  #slot;
+  #handle;
+  constructor(pool, slot, info) {
+    this.#pool = pool;
+    this.#slot = slot;
+    this.#handle = info.handle;
+    this.metadata = info.metadata;
+    this.frameInfo = info.frameInfo;
+    this.capabilities = info.capabilities;
+    this.tiles = info.tiles;
+    this.byteLength = info.byteLength;
+    this.parseMs = info.parseMs;
+    remoteFinalizer?.register(this, { pool, slot, handle: info.handle }, this);
+  }
+  get format() {
+    return this.metadata.format;
+  }
+  get previews() {
+    return this.metadata.previews;
+  }
+  /** True after `close()`, or once the worker holding the file has terminated. */
+  get closed() {
+    return this.#handle === null || this.#slot.dead;
+  }
+  #call(method, args, options) {
+    if (this.#handle === null) return Promise.reject(new ClosedError("remote FlashRaw handle is closed"));
+    let o;
+    try {
+      o = splitOptions(options);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+    return this.#pool._request(this.#slot, "call", { handle: this.#handle, method, args: [...args, o.rest] }, [], o.signal);
+  }
+  decode(options) {
+    return this.#call("decode", [], options);
+  }
+  decodeRegion(region, options) {
+    return this.#call("decodeRegion", [region], options);
+  }
+  decodeTile(index, options) {
+    return this.#call("decodeTile", [index], options);
+  }
+  preview(options) {
+    return this.#call("preview", [], options);
+  }
+  thumbnail(options) {
+    return this.#call("thumbnail", [], options);
+  }
+  exifBytes(options) {
+    return this.#call("exifBytes", [], options);
+  }
+  xmpBytes(options) {
+    return this.#call("xmpBytes", [], options);
+  }
+  async close() {
+    const h = this.#handle;
+    this.#handle = null;
+    remoteFinalizer?.unregister(this);
+    if (h !== null && !this.#slot.dead) await this.#pool._request(this.#slot, "close", { handle: h }).catch(() => {
+    });
+  }
+  [Symbol.asyncDispose ?? /* @__PURE__ */ Symbol.for("Symbol.asyncDispose")]() {
+    return this.close();
+  }
+};
+var WorkerPool = class {
+  #spawn;
+  #size;
+  #init;
+  #slots = [];
+  // live workers: { w, queue, running, dead }
+  #queue = [];
+  // requests any worker may run
+  #nextId = 1;
+  #terminated = false;
+  #threaded = false;
+  // workers run the threaded build: their decoders cannot see the flag
+  constructor(spawn, options = {}) {
+    if (options && (typeof options !== "object" || Array.isArray(options))) {
+      throw new InvalidArgumentError("pool options must be an object");
+    }
+    const size = options.size ?? defaultSize(options.hardwareConcurrency);
+    if (!Number.isInteger(size) || size < 1) throw new InvalidArgumentError("pool size must be a positive integer");
+    this.#spawn = spawn;
+    this.#size = size;
+    this.#init = options.init ?? null;
+    const t = this.#init?.threads;
+    this.#threaded = t !== void 0 && t !== false && t !== 0;
+  }
+  get size() {
+    return this.#size;
+  }
+  /** Requests running or waiting per spawned worker (not yet assigned ones: `queued`). */
+  get load() {
+    return this.#slots.map((s) => s.queue.length + (s.running ? 1 : 0));
+  }
+  /** Requests waiting for a free worker. */
+  get queued() {
+    return this.#queue.length;
+  }
+  #makeSlot() {
+    const w = this.#spawn();
+    const slot = { w, queue: [], running: null, dead: false };
+    w.onMessage((msg) => {
+      const req = slot.running;
+      if (slot.dead || !req || msg?.id !== req.id) return;
+      this.#settle(slot, req);
+      if (req.abortReason !== void 0) {
+        req.reject(req.abortReason);
+      } else if (msg.ok) {
+        try {
+          req.resolve(req.wrap ? req.wrap(msg.result, slot) : msg.result);
+        } catch (e) {
+          req.reject(e);
+        }
+      } else {
+        req.reject(errorFromJSON(msg.error));
+      }
+      this.#pump();
+    });
+    w.onError((err) => {
+      const e = new InternalError(`FlashRaw worker failed: ${err?.message ?? err}`, { cause: err });
+      this.#retire(slot, e, e);
+    });
+    this.#slots.push(slot);
+    if (this.#init) {
+      slot.queue.push(this.#newRequest(slot, "init", this.#init, [], null, null, () => {
+      }, () => {
+      }));
+    }
+    return slot;
+  }
+  #newRequest(slot, op, args, transfer, signal, wrap, resolve, reject) {
+    const req = { id: this.#nextId++, slot, op, args, transfer, signal, wrap, resolve, reject, onAbort: null };
+    if (signal && CANCELLABLE(op, args) && canShareFlag() && !this.#threaded) {
+      req.flag = new Int32Array(new SharedArrayBuffer(4));
+    }
+    if (signal) {
+      req.onAbort = () => this.#abort(req);
+      signal.addEventListener("abort", req.onAbort, { once: true });
+    }
+    return req;
+  }
+  /** A request finished or was dropped: detach its abort listener, free its worker. */
+  #settle(slot, req) {
+    if (req.signal) req.signal.removeEventListener("abort", req.onAbort);
+    if (req.graceTimer) clearTimeout(req.graceTimer);
+    if (slot && slot.running === req) slot.running = null;
+    if (slot && !slot.dead) slot.w.idle?.(!slot.running && slot.queue.length === 0);
+  }
+  #abort(req) {
+    const reason = abortReason(req.signal);
+    const busy = this.#slots.find((s) => s.running === req);
+    if (busy && req.flag) {
+      req.abortReason = reason;
+      Atomics.store(req.flag, 0, 1);
+      req.graceTimer = setTimeout(() => {
+        if (busy.running === req) {
+          this.#retire(busy, reason, new ClosedError("the worker owning this handle was terminated to cancel a running request"));
+        }
+      }, CANCEL_GRACE_MS);
+      req.graceTimer.unref?.();
+      return;
+    }
+    if (busy) {
+      this.#retire(busy, reason, new ClosedError("the worker owning this handle was terminated to cancel a running request"));
+      return;
+    }
+    const q = req.slot ? req.slot.queue : this.#queue;
+    const i = q.indexOf(req);
+    if (i < 0) return;
+    q.splice(i, 1);
+    this.#settle(req.slot, req);
+    req.reject(reason);
+  }
+  /** Terminate a worker: its running request fails with `runningError`, its queue with `queuedError`. */
+  #retire(slot, runningError, queuedError) {
+    if (slot.dead) return;
+    slot.dead = true;
+    this.#slots.splice(this.#slots.indexOf(slot), 1);
+    try {
+      slot.w.terminate();
+    } catch {
+    }
+    const r = slot.running;
+    slot.running = null;
+    if (r) {
+      this.#settle(null, r);
+      r.reject(runningError);
+    }
+    for (const q of slot.queue.splice(0)) {
+      this.#settle(null, q);
+      q.reject(queuedError);
+    }
+    this.#pump();
+  }
+  #dispatch(slot, req) {
+    slot.running = req;
+    slot.w.idle?.(false);
+    try {
+      slot.w.post({ id: req.id, op: req.op, args: req.args, cancelFlag: req.flag?.buffer }, req.transfer);
+    } catch (e) {
+      this.#settle(slot, req);
+      req.reject(new InvalidArgumentError(`cannot send input to worker: ${e?.message ?? e}`, { cause: e }));
+    }
+  }
+  /** Start queued requests on free workers, spawning workers lazily up to `size`. */
+  #pump() {
+    if (this.#terminated) return;
+    for (let again = true; again; ) {
+      again = false;
+      for (const s of this.#slots) {
+        while (!s.running && s.queue.length) this.#dispatch(s, s.queue.shift());
+      }
+      while (this.#queue.length) {
+        let s = this.#slots.find((x) => !x.running && x.queue.length === 0);
+        if (!s) {
+          if (this.#slots.length >= this.#size) break;
+          s = this.#makeSlot();
+          if (s.queue.length) {
+            again = true;
+            break;
+          }
+        }
+        this.#dispatch(s, this.#queue.shift());
+      }
+    }
+  }
+  /**
+   * @internal Queue a request on `slot` (a remote handle's worker) or on any worker (null).
+   * `wrap(result, slot)` post-processes a successful result.
+   */
+  _request(slot, op, args, transfer = [], signal = null, wrap = null) {
+    if (this.#terminated) return Promise.reject(new ClosedError("worker pool has been terminated"));
+    if (slot && slot.dead) return Promise.reject(new ClosedError("the worker owning this handle has terminated"));
+    if (signal?.aborted) return Promise.reject(abortReason(signal));
+    return new Promise((resolve, reject) => {
+      const req = this.#newRequest(slot, op, args, transfer, signal, wrap, resolve, reject);
+      (slot ? slot.queue : this.#queue).push(req);
+      this.#pump();
+    });
+  }
+  #unbound(op, args, input, options, wrap = null) {
+    let o;
+    try {
+      o = splitOptions(options);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+    return this._request(null, op, { ...args, input, options: o.rest }, inputTransfer(input, o.transfer), o.signal, wrap);
+  }
+  /** Decode in a worker. Same options as `FlashRaw#decode` (+ `transfer`, `signal`). */
+  decode(input, options) {
+    return this.#unbound("oneshot", { task: "decode" }, input, options);
+  }
+  readMetadata(input, options) {
+    return this.#unbound("oneshot", { task: "metadata" }, input, options);
+  }
+  extractPreview(input, options) {
+    return this.#unbound("oneshot", { task: "preview" }, input, options);
+  }
+  extractThumbnail(input, options) {
+    return this.#unbound("oneshot", { task: "thumbnail" }, input, options);
+  }
+  detectFormat(input, options) {
+    return this.#unbound("detect", {}, input, options);
+  }
+  getCapabilities() {
+    return this._request(null, "capabilities", {});
+  }
+  /** Open a file in one worker and keep it there for repeated calls. */
+  open(input, options) {
+    return this.#unbound("open", {}, input, options, (info, slot) => new RemoteFlashRaw(this, slot, info));
+  }
+  /** Stop all workers; pending requests are rejected. */
+  terminate() {
+    if (this.#terminated) return;
+    this.#terminated = true;
+    const err = new ClosedError("worker pool terminated");
+    for (const r of this.#queue.splice(0)) {
+      this.#settle(null, r);
+      r.reject(err);
+    }
+    for (const s of [...this.#slots]) this.#retire(s, err, err);
+  }
+  [Symbol.dispose ?? /* @__PURE__ */ Symbol.for("Symbol.dispose")]() {
+    this.terminate();
+  }
+};
+function defaultSize(hc) {
+  const n = hc ?? (typeof navigator !== "undefined" ? navigator.hardwareConcurrency : 0) ?? 0;
+  return Math.max(1, Math.min(4, (n || 2) - 1));
+}
+
+export {
+  FlashRawError,
+  UnsupportedFormatError,
+  UnsupportedCompressionError,
+  CorruptFileError,
+  InvalidMetadataError,
+  CameraUnsupportedError,
+  GpuUnavailableError,
+  OutOfMemoryError,
+  LimitExceededError,
+  NotAvailableError,
+  InvalidArgumentError,
+  IoError,
+  ClosedError,
+  CancelledError,
+  InternalError,
+  ERROR_KINDS,
+  errorFromKind,
+  errorFromJSON,
+  serve,
+  WorkerPool
+};

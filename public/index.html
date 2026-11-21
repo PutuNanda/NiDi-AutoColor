@@ -7,6 +7,7 @@
   <title>NiDi AutoColor — Editor Foto</title>
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/soft-theme.css">
+  <script src="/render.js" defer></script>
   <script src="/script.js" defer></script>
 </head>
 <body>
@@ -18,7 +19,7 @@
       </a>
     </div>
     <div class="floating-actions">
-      <input id="file-input" type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/tiff,image/gif" hidden>
+      <input id="file-input" type="file" accept="image/*,.cr3,.cr2,.crw,.arw,.srf,.sr2,.arq,.nef,.nrw,.raf,.rw2,.raw,.orf,.ori,.3fr,.fff,.iiq,.dng,.rwl,.x3f,.pef,.gpr,.srw,.mrw,.mos,.kdc,.dcr,.dcs,.erf,.mef,.ari,.heic,.heif,.hif,.jxl,.tif,.tiff,.psd,.psb,.exr" hidden>
       <button id="import-button" class="button button-quiet" type="button"><span class="button-icon">＋</span> Impor foto</button>
       <button id="export-button" class="button button-primary" type="button" disabled><span>Ekspor</span><span class="export-arrow">↗</span></button>
     </div>
@@ -30,19 +31,19 @@
         </div>
         <div id="drop-zone" class="photo-stage">
           <img id="photo-preview" alt="Pratinjau foto yang telah diedit" draggable="false" hidden>
-          <div id="preview-loading" class="preview-loading" role="status" aria-live="polite" hidden><span class="loading-spinner" aria-hidden="true"></span><strong>Memproses foto di server…</strong><small>Tunggu sebentar untuk melihat pratinjau.</small></div>
-          <div id="zoom-indicator" class="zoom-indicator" hidden><strong>100%</strong><span>Scroll untuk zoom · tarik foto untuk geser</span></div>
+          <div id="preview-loading" class="preview-loading" role="status" aria-live="polite" hidden><span class="loading-spinner" aria-hidden="true"></span><strong>Menyiapkan pratinjau lokal...</strong><small>Tunggu sebentar untuk melihat pratinjau.</small></div>
+          <div id="zoom-indicator" class="zoom-indicator" hidden><strong>100%</strong><span>Scroll untuk zoom &middot; tarik foto untuk geser</span></div>
           <div id="empty-state" class="empty-state">
             <div class="upload-illustration" aria-hidden="true"><span class="upload-glow"></span><span class="upload-frame"><span class="sun"></span><span class="mountain mountain-back"></span><span class="mountain mountain-front"></span></span><span class="upload-plus">＋</span></div>
             <p class="empty-eyebrow">RUANG KERJA KREATIF</p>
             <h1>Warna yang kamu bayangkan,<br><em>dimulai dari sini.</em></h1>
             <p class="empty-description">Impor foto untuk mulai melakukan koreksi dan color grading.</p>
             <button id="empty-import" class="button button-primary empty-button" type="button">Pilih foto <span>↗</span></button>
-            <span class="format-hint">JPG, PNG, WEBP · hingga 35 MB</span>
+            <span class="format-hint">Foto umum &amp; RAW &middot; hingga 160 megapiksel</span>
           </div>
-          <div id="drop-overlay" class="drop-overlay" hidden><div><strong>Lepas foto di sini</strong><span>Foto dikirim ke server untuk diproses.</span></div></div>
+          <div id="drop-overlay" class="drop-overlay" hidden><div><strong>Lepas foto di sini</strong><span>Foto dibuka dan diproses langsung di perangkat.</span></div></div>
         </div>
-        <footer class="workspace-footer"><span><span class="server-lock">⌑</span> Foto diproses di server</span><span>PRATINJAU SERVER</span></footer>
+        <footer class="workspace-footer"><span><span class="local-render">&#9670;</span> Foto diproses di perangkat</span><span>PRATINJAU LOKAL</span></footer>
       </section>
       <aside class="edit-panel" aria-label="Panel pengeditan">
         <div class="panel-heading"><div><p class="section-kicker">WORKSPACE / 01</p><h2>Color studio</h2></div><button id="reset-button" type="button" class="reset-button" disabled>↺ <span>Atur ulang</span></button></div>
