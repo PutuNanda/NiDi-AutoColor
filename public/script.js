@@ -47,7 +47,7 @@
   let imageId = '';
   let currentFileName = '';
   let previewUrl = '';
-  let originalUrl = '';
+  let originalPreviewUrl = '';
   let previewTimer = 0;
   let previewFrame = 0;
   let lastRenderStarted = 0;
@@ -72,6 +72,7 @@
   const fileInput = $('#file-input');
   const importButton = $('#import-button');
   const exportButton = $('#export-button');
+  const exportFormat = $('#export-format');
   const compareButton = $('#compare-button');
   const preview = $('#photo-preview');
   const previewLoading = $('#preview-loading');
@@ -484,6 +485,11 @@
     const activeId = imageId;
     const version = ++renderNumber;
     setStatus('Merender di perangkat…', true);
+    if (previewUrl) previewLoading.hidden = true;
+    else {
+      previewLoading.querySelector('strong').textContent = 'Menerapkan edit di perangkat…';
+      previewLoading.hidden = false;
+    }
     try {
       const result = await renderer.render(state, { maxDimension: 1600, typeHint: 'image/png' });
       if (!result || version !== renderNumber || activeId !== imageId || isComparing) return;
@@ -512,13 +518,13 @@
       clearTimeout(previewTimer); previewTimer = 0;
       if (previewFrame) cancelAnimationFrame(previewFrame); previewFrame = 0;
       renderNumber++;
-      if (previewUrl) URL.revokeObjectURL(previewUrl); if (originalUrl) URL.revokeObjectURL(originalUrl);
-      previewUrl = ''; originalUrl = ''; imageId = `local-${activeImport}`; currentFileName = file.name; state = freshState(); isComparing = false;
-      originalUrl = URL.createObjectURL(file);
+      if (previewUrl) URL.revokeObjectURL(previewUrl); if (originalPreviewUrl) URL.revokeObjectURL(originalPreviewUrl);
+      previewUrl = ''; originalPreviewUrl = ''; imageId = `local-${activeImport}`; currentFileName = file.name; state = freshState(); isComparing = false;
+      compareButton.classList.remove('is-active');
       photoWidth = result.width; photoHeight = result.height; setZoom(1); fitCanvasToViewport(); zoomIndicator.hidden = false;
       selectedCurveChannel = 'master'; selectedHslBand = 'red';
       $('#photo-name').textContent = file.name; $('#photo-dimensions').textContent = `${result.width.toLocaleString('id-ID')} × ${result.height.toLocaleString('id-ID')}`;
-      emptyState.hidden = true; preview.src = originalUrl; preview.hidden = false;
+      emptyState.hidden = true; preview.removeAttribute('src'); preview.hidden = true;
       previewLoading.querySelector('strong').textContent = 'Menerapkan edit di perangkat…'; previewLoading.hidden = true;
       exportButton.disabled = false; compareButton.disabled = false; $('#reset-view-button').disabled = false; $('#reset-button').disabled = false;
       buildControls(); setStatus('Foto dibuka di perangkat');
@@ -535,9 +541,10 @@
     setStatus('Mengekspor ukuran penuh di perangkat…', true);
     try {
       const result = await renderer.render(structuredClone(state), {
-        width: photoWidth, height: photoHeight, typeHint: 'image/png',
+        width: photoWidth, height: photoHeight, typeHint: exportFormat.value,
       });
       if (!result) throw new Error('Ekspor dibatalkan. Coba lagi.');
+      if (result.blob.type !== exportFormat.value) throw new Error(`Browser tidak dapat mengekspor ${exportFormat.value === 'image/jpeg' ? 'JPEG' : 'PNG'}.`);
       const href = URL.createObjectURL(result.blob);
       if (!isComparing) {
         setPreviewUrl(href); preview.hidden = false; previewLoading.hidden = true;
@@ -545,9 +552,10 @@
       }
       const link = document.createElement('a');
       const stem = (currentFileName.replace(/\.[^.]+$/, '') || 'foto').replace(/[\\/:*?"<>|]/g, '-');
-      link.href = href; link.download = `${stem}-nidi.png`; document.body.append(link); link.click(); link.remove();
+      const extension = exportFormat.value === 'image/jpeg' ? 'jpg' : 'png';
+      link.href = href; link.download = `${stem}-nidi.${extension}`; document.body.append(link); link.click(); link.remove();
       if (isComparing) setTimeout(() => URL.revokeObjectURL(href), 1000);
-      setStatus('Ekspor selesai'); showToast('Foto hasil edit berhasil diekspor di perangkat.');
+      setStatus('Ekspor selesai'); showToast(`Foto hasil edit berhasil diekspor sebagai ${extension.toUpperCase()}.`);
     } catch (error) { setStatus('Ekspor gagal'); showToast(error.message); }
     finally {
       isExporting = false; exportButton.disabled = false;
@@ -562,7 +570,31 @@
       clearTimeout(previewTimer); previewTimer = 0;
       if (previewFrame) cancelAnimationFrame(previewFrame); previewFrame = 0;
       renderNumber++;
-      if (originalUrl) { preview.src = originalUrl; preview.hidden = false; previewLoading.hidden = true; setStatus('Foto asli'); }
+      if (originalPreviewUrl) {
+        preview.src = originalPreviewUrl; preview.hidden = false; previewLoading.hidden = true; setStatus('Foto asli');
+        return;
+      }
+      preview.hidden = true; previewLoading.hidden = false;
+      previewLoading.querySelector('strong').textContent = 'Membuat pratinjau foto asli...';
+      setStatus('Membuka foto asli di perangkat...', true);
+      const activeId = imageId;
+      void renderer.render(freshState(), { maxDimension: 1600, typeHint: 'image/png' }).then(result => {
+        if (activeId !== imageId || !isComparing) return;
+        if (!result) { toggleCompare(false); return; }
+        originalPreviewUrl = URL.createObjectURL(result.blob);
+        preview.src = originalPreviewUrl; preview.hidden = false; previewLoading.hidden = true;
+        setStatus('Foto asli');
+      }).catch(error => {
+        if (activeId !== imageId || !isComparing) return;
+        isComparing = false; compareButton.classList.remove('is-active');
+        if (previewUrl) { preview.src = previewUrl; preview.hidden = false; previewLoading.hidden = true; }
+        else {
+          previewLoading.querySelector('strong').textContent = 'Pratinjau asli gagal dibuat';
+          previewLoading.hidden = false;
+        }
+        setStatus('Pratinjau asli gagal');
+        showToast(error.message);
+      });
     } else { setStatus('Memulihkan pratinjau…', true); queuePreview(); }
   }
 
@@ -633,7 +665,7 @@
   window.addEventListener('beforeunload', () => {
     renderer.destroy();
     if (previewUrl) URL.revokeObjectURL(previewUrl);
-    if (originalUrl) URL.revokeObjectURL(originalUrl);
+    if (originalPreviewUrl) URL.revokeObjectURL(originalPreviewUrl);
   });
 
   buildControls();

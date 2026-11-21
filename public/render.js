@@ -277,6 +277,7 @@
       const scaleX = originalWidth / width, scaleY = originalHeight / height;
       const settings = cleanSettings(message.settings);
       const bins = Array(64).fill(0);
+      const type = message.typeHint || 'image/png';
       const tileWidth = 512, tileHeight = 256, margin = 4;
       for (let y = 0; y < height; y += tileHeight) {
         for (let x = 0; x < width; x += tileWidth) {
@@ -299,6 +300,15 @@
           );
           const pixels = tileContext.getImageData(0, 0, tileW, tileH);
           processPixels(pixels.data, tileW, tileH, settings, left, top, width, height);
+          if (type === 'image/jpeg') {
+            for (let index = 0; index < pixels.data.length; index += 4) {
+              const alpha = pixels.data[index + 3] / 255;
+              pixels.data[index] = pixels.data[index] * alpha + 255 * (1 - alpha);
+              pixels.data[index + 1] = pixels.data[index + 1] * alpha + 255 * (1 - alpha);
+              pixels.data[index + 2] = pixels.data[index + 2] * alpha + 255 * (1 - alpha);
+              pixels.data[index + 3] = 255;
+            }
+          }
           addHistogram(pixels.data, tileW, tileH, x, y, x - left, y - top, coreWidth, coreHeight, bins);
           outputContext.putImageData(pixels, left, top, x - left, y - top, coreWidth, coreHeight);
           await yieldToMessages();
@@ -308,8 +318,7 @@
         self.postMessage({ type: 'cancelled', id: job });
         return;
       }
-      const type = message.typeHint || 'image/png';
-      const blob = await outputCanvas.convertToBlob({ type, quality: .94 });
+      const blob = await outputCanvas.convertToBlob({ type, quality: 1 });
       if (job !== latestJob || version !== sourceVersion) {
         self.postMessage({ type: 'cancelled', id: job });
         return;

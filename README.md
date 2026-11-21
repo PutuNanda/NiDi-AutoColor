@@ -15,7 +15,7 @@ Editor foto sederhana yang mengimpor, mengedit, dan mengekspor gambar langsung d
 - Koreksi suhu warna, tint, kontras, kecerahan, exposure, highlights, shadows, whites, blacks, saturation, hue, texture, clarity, dan vignette.
 - Penyesuaian HSL untuk delapan rentang warna, kurva tonal yang dapat ditarik, dan roda warna shadows/midtones/highlights.
 - Pratinjau diperbarui langsung saat kontrol digeser, dengan render di background worker agar antarmuka tetap responsif.
-- Ekspor berjalan di perangkat pada resolusi asli sebagai PNG lossless, lalu file hasil ekspor dipakai sebagai pratinjau final.
+- Ekspor berjalan di perangkat pada resolusi asli sebagai PNG lossless atau JPEG kualitas maksimum; JPEG tetap lossy dan memakai latar putih untuk area transparan. File hasil ekspor dipakai sebagai pratinjau final.
 
 Browser harus mendukung `createImageBitmap`, Web Workers, dan `OffscreenCanvas` untuk pemrosesan lokal. Ekspor PNG dibuat ulang dari foto asli pada resolusi penuh dan tidak memakai kompresi lossy. Pipeline Canvas memproses warna 8 bit per kanal; sumber 16 bit/HDR, profil warna khusus, serta metadata kamera tidak dipertahankan persis oleh browser.
 
