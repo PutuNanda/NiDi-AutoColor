@@ -53,6 +53,7 @@
   let lastRenderStarted = 0;
   let isExporting = false;
   let previewQueued = false;
+  let pendingTemplate = false;
   let importNumber = 0;
   let renderNumber = 0;
   const renderer = window.NiDiRender.create();
@@ -519,7 +520,8 @@
       if (previewFrame) cancelAnimationFrame(previewFrame); previewFrame = 0;
       renderNumber++;
       if (previewUrl) URL.revokeObjectURL(previewUrl); if (originalPreviewUrl) URL.revokeObjectURL(originalPreviewUrl);
-      previewUrl = ''; originalPreviewUrl = ''; imageId = `local-${activeImport}`; currentFileName = file.name; state = freshState(); isComparing = false;
+      previewUrl = ''; originalPreviewUrl = ''; imageId = `local-${activeImport}`; currentFileName = file.name;
+      state = pendingTemplate ? state : freshState(); pendingTemplate = false; isComparing = false;
       compareButton.classList.remove('is-active');
       photoWidth = result.width; photoHeight = result.height; setZoom(1); fitCanvasToViewport(); zoomIndicator.hidden = false;
       selectedCurveChannel = 'master'; selectedHslBand = 'red';
@@ -563,7 +565,7 @@
       if (previewQueued) { previewQueued = false; queuePreview(); }
     }
   }
-  function resetEdits() { state = freshState(); buildControls(); queuePreview(); }
+  function resetEdits() { state = freshState(); pendingTemplate = false; buildControls(); queuePreview(); }
   function toggleCompare(active) {
     if (!imageId || isComparing === active) return;
     isComparing = active; compareButton.classList.toggle('is-active', active);
@@ -668,6 +670,35 @@
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     if (originalPreviewUrl) URL.revokeObjectURL(originalPreviewUrl);
   });
+
+  function cloneTemplateState(settings) {
+    const defaults = freshState();
+    const source = settings && typeof settings === 'object' ? structuredClone(settings) : {};
+    return {
+      ...defaults,
+      ...source,
+      curves: { ...defaults.curves, ...(source.curves || {}) },
+      hsl: Object.fromEntries(bands.map(({ key }) => [key, { ...defaults.hsl[key], ...(source.hsl?.[key] || {}) }])),
+      wheels: Object.fromEntries(['shadows', 'midtones', 'highlights'].map(key => [key, { ...defaults.wheels[key], ...(source.wheels?.[key] || {}) }])),
+    };
+  }
+
+  window.NiDiEditor = {
+    getSettings: () => structuredClone(state),
+    getOutputFormat: () => exportFormat.value,
+    applyTemplate: (settings, outputFormat, name) => {
+      renderNumber++;
+      isComparing = false;
+      compareButton.classList.remove('is-active');
+      state = cloneTemplateState(settings);
+      pendingTemplate = !imageId;
+      if (['png', 'jpg', 'jpeg'].includes(outputFormat)) exportFormat.value = outputFormat;
+      buildControls();
+      if (imageId) { setStatus(`Template applied: ${name}`); queuePreview(); }
+      else setStatus(`Template loaded: ${name}. Import a photo to apply it.`);
+      showToast(`Template “${name}” applied.`);
+    },
+  };
 
   buildControls();
 })();

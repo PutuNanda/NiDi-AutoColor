@@ -7,21 +7,28 @@
   <title>NiDi AutoColor — Editor Foto</title>
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/soft-theme.css">
+  <link rel="stylesheet" href="/navigation.css">
+  <link rel="stylesheet" href="/templates.css">
   <script src="/render.js" defer></script>
   <script src="/script.js" defer></script>
+  <script src="/navigation.js" defer></script>
+  <script src="/templates.js" defer></script>
 </head>
 <body>
   <div class="app-shell">
     <div class="floating-brand">
-      <a class="brand" href="/" aria-label="NiDi AutoColor home">
+      <button id="brand-menu-toggle" class="brand brand-menu-toggle" type="button" aria-label="Buka navigasi NiDi" aria-expanded="false" aria-controls="app-sidebar">
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
         <span class="brand-copy"><strong>nidi</strong><small>AUTOCOLOR</small></span>
-      </a>
+      </button>
     </div>
+    <div id="navigation-root"></div>
+    <div id="editor-view" class="app-view">
     <div class="floating-actions">
       <input id="file-input" type="file" accept="image/*,.cr3,.cr2,.crw,.arw,.srf,.sr2,.arq,.nef,.nrw,.raf,.rw2,.raw,.orf,.ori,.3fr,.fff,.iiq,.dng,.rwl,.x3f,.pef,.gpr,.srw,.mrw,.mos,.kdc,.dcr,.dcs,.erf,.mef,.ari,.heic,.heif,.hif,.jxl,.tif,.tiff,.psd,.psb,.exr" hidden>
       <button id="import-button" class="button button-quiet" type="button"><span class="button-icon">＋</span> Impor foto</button>
       <label class="format-select"><span>Format</span><select id="export-format" aria-label="Format ekspor"><option value="png" selected>PNG</option><option value="jpeg">JPEG (.jpeg)</option><option value="jpg">JPG (.jpg)</option></select></label>
+      <button id="save-template-button" class="button button-quiet save-template-button" type="button" aria-label="Save as Template"><span class="button-icon" aria-hidden="true">+</span><span>Save as Template</span></button>
       <button id="export-button" class="button button-primary" type="button" disabled><span>Ekspor</span><span class="export-arrow">↗</span></button>
     </div>
     <main class="editor-layout">
@@ -80,6 +87,9 @@
         </div>
       </section>
     </div>
+    </div>
+    <div id="template-view-root"></div>
+    <div id="template-modal-root"></div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
 </body>

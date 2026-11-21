@@ -6,10 +6,12 @@ const sharp = require('sharp');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const TEMPLATE_DIR = path.join(__dirname, 'Template');
 const MAX_UPLOAD = 35 * 1024 * 1024;
 const MAX_PIXELS = 80_000_000;
 const TTL = 30 * 60 * 1000;
 const images = new Map();
+fs.mkdirSync(TEMPLATE_DIR, { recursive: true });
 setInterval(() => {
   const now = Date.now();
   for (const [id, item] of images) if (now - item.created > TTL) images.delete(id);
@@ -26,6 +28,17 @@ function chooseOutputFormat(meta) {
 function json(res, status, value) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
   res.end(JSON.stringify(value));
+}
+function templateName(value) {
+  if (typeof value !== 'string') throw Object.assign(new Error('Nama template harus berupa teks.'), { status: 400 });
+  const name = value.trim();
+  if (!name || name.length > 64 || !/^[A-Za-z0-9 _-]+$/.test(name)) {
+    throw Object.assign(new Error('Nama hanya boleh berisi huruf, angka, spasi, underscore, dan tanda hubung; maksimal 64 karakter.'), { status: 400 });
+  }
+  if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i.test(name)) {
+    throw Object.assign(new Error('Nama tersebut tidak dapat digunakan sebagai nama file.'), { status: 400 });
+  }
+  return name;
 }
 function readBody(req, limit) {
   return new Promise((resolve, reject) => {
@@ -150,6 +163,53 @@ async function render(item, settings, preview, format) {
   return {buffer:await output.toBuffer(),width:info.width,height:info.height,histogram,format};
 }
 async function api(req,res,url) {
+  if(req.method==='GET'&&url==='/api/templates'){
+    const entries=await fs.promises.readdir(TEMPLATE_DIR,{withFileTypes:true});
+    const templates=[];
+    for(const entry of entries){
+      if(!entry.isFile()||!entry.name.toLowerCase().endsWith('.json'))continue;
+      try{
+        const filename=path.join(TEMPLATE_DIR,entry.name);
+        const stats=await fs.promises.stat(filename);
+        if(stats.size>256*1024)continue;
+        const data=JSON.parse(await fs.promises.readFile(filename,'utf8'));
+        const name=templateName(data.name);
+        if(`${name}.json`.toLowerCase()!==entry.name.toLowerCase()||!data.settings||typeof data.settings!=='object')continue;
+        const outputFormat=['png','jpg','jpeg'].includes(data.outputFormat)?data.outputFormat:'png';
+        templates.push({name,createdAt:String(data.createdAt||stats.mtime.toISOString()),outputFormat,settings:cleanSettings(data.settings)});
+      }catch{}
+    }
+    templates.sort((a,b)=>a.name.localeCompare(b.name,'en',{sensitivity:'base'}));
+    return json(res,200,{templates});
+  }
+  if(req.method==='POST'&&url==='/api/templates'){
+    let body;
+    try{body=JSON.parse((await readBody(req,256*1024)).toString());}
+    catch(error){return json(res,error.status||400,{error:'Data template tidak valid.'});}
+    if(!body||typeof body!=='object'||Array.isArray(body))return json(res,400,{error:'Data template tidak valid.'});
+    const name=templateName(body.name);
+    if(!body.settings||typeof body.settings!=='object'||Array.isArray(body.settings))return json(res,400,{error:'Pengaturan template tidak valid.'});
+    const filename=`${name}.json`;
+    const existing=await fs.promises.readdir(TEMPLATE_DIR);
+    if(existing.some(entry=>entry.toLowerCase()===filename.toLowerCase()))return json(res,409,{error:'Nama template sudah digunakan. Pilih nama lain.'});
+    const outputFormat=['png','jpg','jpeg'].includes(body.outputFormat)?body.outputFormat:'png';
+    const template={schemaVersion:1,name,createdAt:new Date().toISOString(),outputFormat,settings:cleanSettings(body.settings)};
+    try{await fs.promises.writeFile(path.join(TEMPLATE_DIR,filename),`${JSON.stringify(template,null,2)}\n`,{flag:'wx'});}
+    catch(error){if(error.code==='EEXIST')return json(res,409,{error:'Nama template sudah digunakan. Pilih nama lain.'});throw error;}
+    return json(res,201,{template});
+  }
+  if(req.method==='DELETE'&&url.startsWith('/api/templates/')){
+    let filename;
+    try{filename=decodeURIComponent(url.slice('/api/templates/'.length));}
+    catch{return json(res,400,{error:'Nama template tidak valid.'});}
+    if(!filename.toLowerCase().endsWith('.json'))return json(res,400,{error:'File template harus berekstensi .json.'});
+    const requestedName=templateName(filename.slice(0,-5));
+    const entries=await fs.promises.readdir(TEMPLATE_DIR);
+    const existing=entries.find(entry=>entry.toLowerCase()===`${requestedName}.json`.toLowerCase());
+    if(!existing)return json(res,404,{error:'Template tidak ditemukan.'});
+    await fs.promises.unlink(path.join(TEMPLATE_DIR,existing));
+    return json(res,200,{deleted:requestedName});
+  }
   if(req.method==='POST'&&url==='/api/upload'){
     if(!String(req.headers['content-type']||'').toLowerCase().startsWith('image/'))return json(res,415,{error:'Pilih file gambar untuk diimpor.'});
     const buffer=await readBody(req,MAX_UPLOAD);if(!buffer.length)return json(res,400,{error:'File gambar kosong.'});

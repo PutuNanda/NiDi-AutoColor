@@ -1,0 +1,32 @@
+<div id="save-template-modal" class="modal-backdrop" hidden>
+  <section class="app-modal" role="dialog" aria-modal="true" aria-labelledby="save-template-title">
+    <button class="modal-close" type="button" data-modal-close aria-label="Close dialog">×</button>
+    <p class="modal-kicker">TEMPLATE LIBRARY</p>
+    <h2 id="save-template-title">Save as Template</h2>
+    <p class="modal-description">Save the current editing settings as a new JSON template.</p>
+    <form id="save-template-form" novalidate>
+      <label class="modal-label" for="template-name-input">Template name</label>
+      <input id="template-name-input" class="modal-input" name="name" type="text" maxlength="64" autocomplete="off" required pattern="[A-Za-z0-9 _-]+" placeholder="e.g. Warm Sunset_01">
+      <small class="modal-hint">Letters, numbers, spaces, underscores, and hyphens only.</small>
+      <p id="save-template-error" class="modal-error" role="alert" hidden></p>
+      <div class="modal-actions">
+        <button class="button button-quiet" type="button" data-modal-close>Cancel</button>
+        <button id="save-template-confirm" class="button button-primary" type="submit">Save Template</button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<div id="delete-template-modal" class="modal-backdrop" hidden>
+  <section class="app-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-template-title" aria-describedby="delete-template-description">
+    <button class="modal-close" type="button" data-modal-close aria-label="Close dialog">×</button>
+    <p class="modal-kicker">PERMANENT ACTION</p>
+    <h2 id="delete-template-title">Delete Template?</h2>
+    <p id="delete-template-description" class="modal-description">This will permanently remove <strong id="delete-template-name"></strong> from the Template folder.</p>
+    <p id="delete-template-error" class="modal-error" role="alert" hidden></p>
+    <div class="modal-actions">
+      <button class="button button-quiet" type="button" data-modal-close>Cancel</button>
+      <button id="delete-template-confirm" class="button button-danger" type="button">Delete Template</button>
+    </div>
+  </section>
+</div>

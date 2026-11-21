@@ -1,0 +1,18 @@
+<section id="template-library-view" class="template-library-view app-view" aria-labelledby="template-library-title" hidden>
+  <header class="template-page-header">
+    <div>
+      <p class="template-kicker">WORKSPACE / LIBRARY</p>
+      <h1 id="template-library-title">Template Library</h1>
+      <p class="template-page-description">Your saved color settings. Apply one to the editor or save it as a new template after making changes.</p>
+    </div>
+    <button class="button button-quiet template-back-button" type="button" data-app-view="editor">Back to editor</button>
+  </header>
+  <div id="template-library-status" class="template-library-status" role="status" aria-live="polite"></div>
+  <div id="template-list" class="template-grid" aria-live="polite"></div>
+  <div id="template-empty" class="template-empty" hidden>
+    <div class="template-empty-mark" aria-hidden="true">▤</div>
+    <h2>No templates yet</h2>
+    <p>Use <strong>Save as Template</strong> in the editor to store your first look.</p>
+    <button class="button button-primary" type="button" data-app-view="editor">Open editor</button>
+  </div>
+</section>

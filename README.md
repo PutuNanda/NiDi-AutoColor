@@ -20,3 +20,7 @@ Editor foto sederhana yang mengimpor, mengedit, dan mengekspor gambar langsung d
 Browser harus mendukung `createImageBitmap`, Web Workers, dan `OffscreenCanvas` untuk pemrosesan lokal. Ekspor dibuat ulang dari foto asli pada resolusi penuh; PNG tidak memakai kompresi lossy. Pipeline Canvas memproses warna 8 bit per kanal; sumber 16 bit/HDR, profil warna khusus, serta metadata kamera tidak dipertahankan persis oleh browser.
 
 Jalankan `npm run build:formats` setelah memasang dependensi untuk membangun decoder RAW dan TIFF lokal. Decoder RAW mencakup banyak varian kamera, tetapi tidak mendukung setiap codec proprietary. HEIC/HEIF, JXL, PSD/PSB, dan EXR hanya dapat dibuka jika browser dapat mendekodenya; format yang tidak terbaca akan menampilkan pesan error. TIFF multi-halaman membuka halaman pertama. EXR dan dokumen ber-layer tidak dipertahankan sebagai data HDR/layer saat diedit atau diekspor.
+
+## Template
+
+Pengaturan HSL, warna, cahaya, kurva, efek, roda warna, dan format ekspor disimpan sebagai file JSON di folder `Template` pada root proyek. File ini hanya berisi konfigurasi, tidak menyimpan foto. Nama template menerima huruf ASCII, angka, spasi, underscore, dan tanda hubung hingga 64 karakter. Template yang diterapkan tidak mengubah file template asal; simpan perubahan sebagai template baru.
