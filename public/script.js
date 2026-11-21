@@ -540,11 +540,12 @@
     exportButton.disabled = true; isExporting = true; previewQueued = false;
     setStatus('Mengekspor ukuran penuh di perangkat…', true);
     try {
+      const outputMime = exportFormat.value === 'png' ? 'image/png' : 'image/jpeg';
       const result = await renderer.render(structuredClone(state), {
-        width: photoWidth, height: photoHeight, typeHint: exportFormat.value,
+        width: photoWidth, height: photoHeight, typeHint: outputMime,
       });
       if (!result) throw new Error('Ekspor dibatalkan. Coba lagi.');
-      if (result.blob.type !== exportFormat.value) throw new Error(`Browser tidak dapat mengekspor ${exportFormat.value === 'image/jpeg' ? 'JPEG' : 'PNG'}.`);
+      if (result.blob.type !== outputMime) throw new Error(`Browser tidak dapat mengekspor ${exportFormat.value.toUpperCase()}.`);
       const href = URL.createObjectURL(result.blob);
       if (!isComparing) {
         setPreviewUrl(href); preview.hidden = false; previewLoading.hidden = true;
@@ -552,7 +553,7 @@
       }
       const link = document.createElement('a');
       const stem = (currentFileName.replace(/\.[^.]+$/, '') || 'foto').replace(/[\\/:*?"<>|]/g, '-');
-      const extension = exportFormat.value === 'image/jpeg' ? 'jpg' : 'png';
+      const extension = exportFormat.value;
       link.href = href; link.download = `${stem}-nidi.${extension}`; document.body.append(link); link.click(); link.remove();
       if (isComparing) setTimeout(() => URL.revokeObjectURL(href), 1000);
       setStatus('Ekspor selesai'); showToast(`Foto hasil edit berhasil diekspor sebagai ${extension.toUpperCase()}.`);
