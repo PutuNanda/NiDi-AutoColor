@@ -3,16 +3,50 @@
     <div>
       <p class="template-kicker">WORKSPACE / AUTOMATION</p>
       <h1 id="automatic-processing-title">Automatic Processing</h1>
-      <p class="template-page-description">Halaman khusus untuk alur pemrosesan otomatis. Ruang ini sudah dipisahkan dari editor agar fiturnya bisa dikembangkan tersendiri.</p>
+      <p class="template-page-description">Pilih hingga 20 template, unggah banyak foto, lalu proses setiap kombinasi foto dan template secara paralel di server.</p>
     </div>
     <button class="button button-quiet" type="button" data-app-view="editor">Buka Editing</button>
   </header>
-  <main class="automatic-processing-card">
-    <span class="automatic-processing-mark" aria-hidden="true">⚙</span>
-    <div>
-      <p class="template-kicker">RUANG KERJA BARU</p>
-      <h2>Pemrosesan otomatis</h2>
-      <p>Pengaturan dan alur Automatic Processing dapat ditambahkan di halaman terpisah ini.</p>
+
+  <section class="automatic-processing-section" aria-labelledby="automatic-template-title">
+    <div class="automatic-processing-section-heading">
+      <div>
+        <p class="template-kicker">LANGKAH 01</p>
+        <h2 id="automatic-template-title">Pilih template</h2>
+        <p>Pilih satu atau lebih. Pilihan ini disimpan ke <code>Automatic_Processing/template_settings.json</code>.</p>
+      </div>
+      <button id="automatic-save-templates" class="button button-quiet" type="button" disabled>Simpan pilihan</button>
     </div>
-  </main>
+    <p id="automatic-template-status" class="automatic-processing-status" role="status" aria-live="polite">Memuat template...</p>
+    <div id="automatic-template-list" class="automatic-template-list" role="group" aria-label="Pilih template untuk pemrosesan otomatis"></div>
+  </section>
+
+  <section class="automatic-processing-section" aria-labelledby="automatic-upload-title">
+    <div class="automatic-processing-section-heading">
+      <div>
+        <p class="template-kicker">LANGKAH 02</p>
+        <h2 id="automatic-upload-title">Unggah foto</h2>
+        <p>Setiap foto mendapat ID proses sendiri. Hasil tiap template dapat diunduh terpisah. Tidak ada batas ukuran buatan aplikasi; pemrosesan tetap bergantung pada ruang disk dan perangkat.</p>
+      </div>
+    </div>
+    <div class="automatic-upload-controls">
+      <label class="automatic-file-picker">Pilih foto<input id="automatic-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/gif,image/tiff,image/heif,.jpg,.jpeg,.png,.webp,.avif,.gif,.tif,.tiff,.heic,.heif,.hif" multiple></label>
+      <span id="automatic-file-count" class="automatic-file-count">Belum ada foto dipilih</span>
+      <button id="automatic-process-button" class="button button-primary" type="button" disabled>Mulai pemrosesan</button>
+    </div>
+    <p id="automatic-upload-status" class="automatic-processing-status" role="status" aria-live="polite"></p>
+  </section>
+
+  <section class="automatic-processing-section" aria-labelledby="automatic-jobs-title">
+    <div class="automatic-processing-section-heading">
+      <div>
+        <p class="template-kicker">LANGKAH 03</p>
+        <h2 id="automatic-jobs-title">Proses dan hasil</h2>
+        <p>Proses yang masih berjalan diperbarui otomatis. File disimpan sementara di folder input dan output.</p>
+      </div>
+      <button id="automatic-refresh-jobs" class="button button-quiet" type="button">Muat ulang</button>
+    </div>
+    <p id="automatic-jobs-status" class="automatic-processing-status" role="status" aria-live="polite"></p>
+    <div id="automatic-jobs-list" class="automatic-jobs-list" aria-live="polite"></div>
+  </section>
 </section>

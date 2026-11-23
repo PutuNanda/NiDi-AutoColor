@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-23T05:46:46.001Z",
+  "selectedTemplates": [
+    {
+      "name": "hehe",
+      "outputFormat": "png",
+      "settings": {
+        "temperature": 0,
+        "tint": 0,
+        "hue": 0,
+        "contrast": 0,
+        "brightness": 0,
+        "exposure": 0,
+        "highlights": 0,
+        "shadows": 0,
+        "whites": 0,
+        "blacks": 0,
+        "texture": 0,
+        "clarity": 0,
+        "saturation": 0,
+        "vignette": 0,
+        "vignetteMidpoint": 45,
+        "vignetteRoundness": 0,
+        "vignetteFeather": 70,
+        "curves": {
+          "master": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 1,
+              "y": 1
+            }
+          ],
+          "red": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 1,
+              "y": 1
+            }
+          ],
+          "green": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 1,
+              "y": 1
+            }
+          ],
+          "blue": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 1,
+              "y": 1
+            }
+          ]
+        },
+        "hsl": {
+          "red": {
+            "h": 0,
+            "s": 0,
+            "l": 0
+          },
+          "orange": {
+            "h": 0,
+            "s": 0,
+            "l": 0
+          },
+          "yellow": {
+            "h": 0,
+            "s": 0,
+            "l": 0
+          },
+          "green": {
+            "h": 0,
+            "s": 0,
+            "l": 0
+          },
+          "aqua": {
+            "h": 0,
+            "s": 0,
+            "l": 0
+          },
+          "blue": {
+            "h": 0,
+            "s": 0,
+            "l": 0
+          },
+          "purple": {
+            "h": 0,
+            "s": 0,
+            "l": 0
+          },
+          "magenta": {
+            "h": 0,
+            "s": 0,
+            "l": 0
+          }
+        },
+        "wheels": {
+          "shadows": {
+            "hue": 92.58873766916622,
+            "amount": 1,
+            "luminance": 0
+          },
+          "midtones": {
+            "hue": 262.13745437784496,
+            "amount": 0.7066430813674216,
+            "luminance": 0
+          },
+          "highlights": {
+            "hue": 0,
+            "amount": 0,
+            "luminance": 0
+          }
+        }
+      }
+    }
+  ]
+}

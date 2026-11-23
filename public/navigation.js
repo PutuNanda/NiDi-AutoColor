@@ -41,6 +41,7 @@
     });
     setSidebarOpen(false);
     if (showTemplates) window.dispatchEvent(new Event('nidi:templates:show'));
+    if (showAutomaticProcessing) window.dispatchEvent(new Event('nidi:automatic-processing:show'));
   }
 
   window.NiDiNavigation = { show, openSidebar: () => setSidebarOpen(true), closeSidebar: () => setSidebarOpen(false) };
@@ -73,6 +74,7 @@
         if (event.key === 'Escape' && sidebar.classList.contains('is-open')) setSidebarOpen(false);
       });
       if (window.NiDiTemplates) window.NiDiTemplates.init();
+      if (window.NiDiAutomaticProcessing) window.NiDiAutomaticProcessing.init();
       show('editor');
     } catch (error) {
       navigationRoot.textContent = error.message;

@@ -1,20 +1,43 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const { pipeline } = require('node:stream/promises');
 const { randomUUID } = require('node:crypto');
 const sharp = require('sharp');
+const automaticRenderer = require('./Automatic_Processing/auto_render');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const TEMPLATE_DIR = path.join(__dirname, 'Template');
+const AUTO_DIR = path.join(__dirname, 'Automatic_Processing');
+const AUTO_INPUT_DIR = path.join(AUTO_DIR, 'input');
+const AUTO_OUTPUT_DIR = path.join(AUTO_DIR, 'output');
+const AUTO_SETTINGS_FILE = path.join(AUTO_DIR, 'template_settings.json');
 const MAX_UPLOAD = 35 * 1024 * 1024;
 const MAX_PIXELS = 80_000_000;
 const TTL = 30 * 60 * 1000;
+const AUTO_JOB_TTL = 6 * 60 * 60 * 1000;
+const MAX_AUTO_JOBS = 100;
 const images = new Map();
+const automaticJobs = new Map();
 fs.mkdirSync(TEMPLATE_DIR, { recursive: true });
+fs.mkdirSync(AUTO_INPUT_DIR, { recursive: true });
+fs.mkdirSync(AUTO_OUTPUT_DIR, { recursive: true });
+if (!fs.existsSync(AUTO_SETTINGS_FILE)) {
+  fs.writeFileSync(AUTO_SETTINGS_FILE, `${JSON.stringify({ schemaVersion: 1, updatedAt: null, selectedTemplates: [] }, null, 2)}\n`);
+}
 setInterval(() => {
   const now = Date.now();
   for (const [id, item] of images) if (now - item.created > TTL) images.delete(id);
+  for (const [id, job] of automaticJobs) {
+    if (Date.now() - job.createdAt > AUTO_JOB_TTL && !['queued', 'processing'].includes(job.status)) {
+      automaticJobs.delete(id);
+      void Promise.all([
+        fs.promises.rm(path.join(AUTO_INPUT_DIR, id), { recursive: true, force: true }),
+        fs.promises.rm(path.join(AUTO_OUTPUT_DIR, id), { recursive: true, force: true }),
+      ]).catch(error => console.error('Pembersihan file pemrosesan otomatis gagal:', error.message));
+    }
+  }
 }, 60_000).unref();
 const bands = ['red', 'orange', 'yellow', 'green', 'aqua', 'blue', 'purple', 'magenta'];
 const bandHue = [0, 30, 60, 120, 180, 220, 275, 325];
@@ -162,25 +185,86 @@ async function render(item, settings, preview, format) {
   else output=output.png({compressionLevel:preview?3:6});
   return {buffer:await output.toBuffer(),width:info.width,height:info.height,histogram,format};
 }
+async function listTemplates() {
+  const entries=await fs.promises.readdir(TEMPLATE_DIR,{withFileTypes:true});
+  const templates=[];
+  for(const entry of entries){
+    if(!entry.isFile()||!entry.name.toLowerCase().endsWith('.json'))continue;
+    try{
+      const filename=path.join(TEMPLATE_DIR,entry.name);
+      const stats=await fs.promises.stat(filename);
+      if(stats.size>256*1024)continue;
+      const data=JSON.parse(await fs.promises.readFile(filename,'utf8'));
+      const name=templateName(data.name);
+      if(`${name}.json`.toLowerCase()!==entry.name.toLowerCase()||!data.settings||typeof data.settings!=='object'||Array.isArray(data.settings))continue;
+      const outputFormat=['png','jpg','jpeg'].includes(data.outputFormat)?data.outputFormat:'png';
+      templates.push({name,createdAt:String(data.createdAt||stats.mtime.toISOString()),outputFormat,settings:cleanSettings(data.settings)});
+    }catch{}
+  }
+  templates.sort((a,b)=>a.name.localeCompare(b.name,'en',{sensitivity:'base'}));
+  return templates;
+}
+async function readAutomaticTemplateSettings() {
+  const settings=JSON.parse(await fs.promises.readFile(AUTO_SETTINGS_FILE,'utf8'));
+  if(!settings||!Array.isArray(settings.selectedTemplates))throw new Error('File template_settings.json tidak valid.');
+  return {
+    schemaVersion:1,
+    updatedAt:settings.updatedAt||null,
+    selectedTemplates:settings.selectedTemplates.filter(item=>item&&typeof item.name==='string'&&item.settings&&typeof item.settings==='object')
+      .map(item=>({name:templateName(item.name),outputFormat:['jpg','jpeg'].includes(item.outputFormat)?'jpeg':'png',settings:cleanSettings(item.settings)})),
+  };
+}
+async function writeAutomaticTemplateSettings(selectedTemplates) {
+  const value={schemaVersion:1,updatedAt:new Date().toISOString(),selectedTemplates};
+  const temporaryFile=path.join(AUTO_DIR,`template_settings.${randomUUID()}.tmp`);
+  await fs.promises.writeFile(temporaryFile,`${JSON.stringify(value,null,2)}\n`,{flag:'wx'});
+  await fs.promises.rename(temporaryFile,AUTO_SETTINGS_FILE);
+  return value;
+}
+function safeFilePart(value) {
+  return String(value||'').normalize('NFKD').replace(/[^A-Za-z0-9_-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,80)||'foto';
+}
+function publicAutomaticJob(job) {
+  return {
+    id:job.id,jobId:job.id,name:job.name,status:job.status,createdAt:new Date(job.createdAt).toISOString(),
+    updatedAt:new Date(job.updatedAt).toISOString(),completed:job.completed,total:job.outputs.length,
+    outputs:job.outputs.map(output=>({
+      id:output.id,templateName:output.templateName,status:output.status,error:output.error||null,
+      fileName:output.fileName,
+      downloadUrl:output.status==='done'?`/api/automatic-processing/jobs/${job.id}/outputs/${output.id}`:null,
+    })),
+  };
+}
+async function runAutomaticJob(job) {
+  job.status='processing';job.updatedAt=Date.now();
+  const jobOutputDir=path.join(AUTO_OUTPUT_DIR,job.id);
+  const rawPath=path.join(path.dirname(job.inputPath),`decoded-${job.id}.rgba`);
+  try{
+    const source=await automaticRenderer.decodeToRawFile(job.inputPath,rawPath);
+    job.width=source.width;job.height=source.height;
+    await fs.promises.mkdir(jobOutputDir,{recursive:true});
+    await Promise.all(job.outputs.map(async output=>{
+      output.status='processing';job.updatedAt=Date.now();
+      const template=job.selectedTemplates.find(item=>item.name===output.templateName);
+      try{
+        await automaticRenderer.renderRawToFile(rawPath,output.path,source.width,source.height,template.settings,output.format);
+        output.status='done';
+      }catch(error){
+        console.error(`Pemrosesan otomatis ${job.id}/${output.id} gagal:`,error.message);
+        output.status='error';output.error='Server tidak dapat memproses foto dengan template ini.';
+      }
+      job.completed++;job.updatedAt=Date.now();
+    }));
+  }finally{
+    await fs.promises.rm(rawPath,{force:true}).catch(()=>{});
+  }
+  const successes=job.outputs.filter(output=>output.status==='done').length;
+  job.status=successes===job.outputs.length?'done':successes?'partial':'error';
+  job.updatedAt=Date.now();
+}
 async function api(req,res,url) {
   if(req.method==='GET'&&url==='/api/templates'){
-    const entries=await fs.promises.readdir(TEMPLATE_DIR,{withFileTypes:true});
-    const templates=[];
-    for(const entry of entries){
-      if(!entry.isFile()||!entry.name.toLowerCase().endsWith('.json'))continue;
-      try{
-        const filename=path.join(TEMPLATE_DIR,entry.name);
-        const stats=await fs.promises.stat(filename);
-        if(stats.size>256*1024)continue;
-        const data=JSON.parse(await fs.promises.readFile(filename,'utf8'));
-        const name=templateName(data.name);
-        if(`${name}.json`.toLowerCase()!==entry.name.toLowerCase()||!data.settings||typeof data.settings!=='object')continue;
-        const outputFormat=['png','jpg','jpeg'].includes(data.outputFormat)?data.outputFormat:'png';
-        templates.push({name,createdAt:String(data.createdAt||stats.mtime.toISOString()),outputFormat,settings:cleanSettings(data.settings)});
-      }catch{}
-    }
-    templates.sort((a,b)=>a.name.localeCompare(b.name,'en',{sensitivity:'base'}));
-    return json(res,200,{templates});
+    return json(res,200,{templates:await listTemplates()});
   }
   if(req.method==='POST'&&url==='/api/templates'){
     let body;
@@ -209,6 +293,113 @@ async function api(req,res,url) {
     if(!existing)return json(res,404,{error:'Template tidak ditemukan.'});
     await fs.promises.unlink(path.join(TEMPLATE_DIR,existing));
     return json(res,200,{deleted:requestedName});
+  }
+  if(req.method==='GET'&&url==='/api/automatic-processing/templates'){
+    const settings=await readAutomaticTemplateSettings();
+    return json(res,200,settings);
+  }
+  if(req.method==='POST'&&url==='/api/automatic-processing/templates'){
+    let body;
+    try{body=JSON.parse((await readBody(req,1024*1024)).toString());}
+    catch(error){return json(res,error.status||400,{error:'Pilihan template tidak valid.'});}
+    if(!body||typeof body!=='object'||Array.isArray(body)||!Array.isArray(body.templateNames))return json(res,400,{error:'Pilihan template tidak valid.'});
+    if(body.templateNames.length>20)return json(res,400,{error:'Maksimal 20 template dapat dipilih.'});
+    const available=await listTemplates();
+    const selected=[];const seen=new Set();
+    for(const rawName of body.templateNames){
+      const name=templateName(rawName),key=name.toLowerCase();
+      if(seen.has(key))continue;
+      const template=available.find(item=>item.name.toLowerCase()===key);
+      if(!template)return json(res,404,{error:`Template "${name}" tidak ditemukan.`});
+      seen.add(key);
+      selected.push({name:template.name,outputFormat:template.outputFormat,settings:template.settings});
+    }
+    const saved=await writeAutomaticTemplateSettings(selected);
+    return json(res,200,saved);
+  }
+  if(req.method==='GET'&&url==='/api/automatic-processing/jobs'){
+    const jobs=[...automaticJobs.values()].sort((a,b)=>b.createdAt-a.createdAt).map(publicAutomaticJob);
+    return json(res,200,{jobs,parallelWorkers:automaticRenderer.maxWorkers});
+  }
+  if(req.method==='POST'&&url==='/api/automatic-processing/jobs'){
+    const contentType=String(req.headers['content-type']||'').toLowerCase().split(';')[0].trim();
+    if(!contentType.startsWith('image/')&&contentType!=='application/octet-stream')return json(res,415,{error:'Pilih file gambar untuk diproses.'});
+    let originalName=String(req.headers['x-file-name']||'foto');
+    try{originalName=decodeURIComponent(originalName);}catch{}
+    originalName=path.basename(originalName.replace(/\\/g,'/')).replace(/[\x00-\x1f"<>:|?*]/g,'_').slice(0,160)||'foto';
+    const stem=path.basename(originalName,path.extname(originalName));
+    const id=randomUUID();
+    const inputDirectory=path.join(AUTO_INPUT_DIR,id);
+    await fs.promises.mkdir(inputDirectory,{recursive:true});
+    const uploadPath=path.join(inputDirectory,`${safeFilePart(stem)||'foto'}.upload`);
+    try{await pipeline(req,fs.createWriteStream(uploadPath,{flags:'wx'}));}
+    catch(error){
+      await fs.promises.rm(inputDirectory,{recursive:true,force:true});
+      if(!res.headersSent)return json(res,400,{error:'Unggahan foto terputus sebelum selesai.'});
+      throw error;
+    }
+    const inputStats=await fs.promises.stat(uploadPath);
+    if(!inputStats.size){await fs.promises.rm(inputDirectory,{recursive:true,force:true});return json(res,400,{error:'File gambar kosong.'});}
+    let meta;
+    try{meta=await sharp(uploadPath,{limitInputPixels:false,unlimited:true,failOn:'warning'}).metadata();}
+    catch{await fs.promises.rm(inputDirectory,{recursive:true,force:true});return json(res,415,{error:'Format gambar tidak didukung atau file rusak.'});}
+    if(!['jpeg','png','webp','avif','gif','tiff','heif'].includes(meta.format)||!meta.width||!meta.height){
+      await fs.promises.rm(inputDirectory,{recursive:true,force:true});
+      return json(res,415,{error:'Format gambar ini belum didukung untuk pemrosesan otomatis.'});
+    }
+    if(!Number.isSafeInteger(meta.width*meta.height*4)){
+      await fs.promises.rm(inputDirectory,{recursive:true,force:true});
+      return json(res,413,{error:'Dimensi foto melebihi kapasitas pemrosesan file pada sistem ini.'});
+    }
+    const inputExtension=meta.format==='heif'?(meta.compression==='av1'?'avif':'heic'):OUTPUT_EXTENSION[meta.format];
+    const inputPath=path.join(inputDirectory,`${safeFilePart(stem)||'foto'}.${inputExtension}`);
+    await fs.promises.rename(uploadPath,inputPath);
+    const selection=await readAutomaticTemplateSettings();
+    if(!selection.selectedTemplates.length){await fs.promises.rm(inputDirectory,{recursive:true,force:true});return json(res,400,{error:'Pilih dan simpan minimal satu template terlebih dahulu.'});}
+    if(automaticJobs.size>=MAX_AUTO_JOBS){
+      const removable=[...automaticJobs.values()].filter(job=>!['queued','processing'].includes(job.status)).sort((a,b)=>a.createdAt-b.createdAt)[0];
+      if(!removable){await fs.promises.rm(inputDirectory,{recursive:true,force:true});return json(res,429,{error:'Antrean penuh. Tunggu proses yang berjalan selesai terlebih dahulu.'});}
+      automaticJobs.delete(removable.id);
+      await Promise.all([
+        fs.promises.rm(path.join(AUTO_INPUT_DIR,removable.id),{recursive:true,force:true}),
+        fs.promises.rm(path.join(AUTO_OUTPUT_DIR,removable.id),{recursive:true,force:true}),
+      ]);
+    }
+    const now=Date.now();
+    const outputs=selection.selectedTemplates.map(template=>{
+      const resultId=randomUUID(),format=['jpg','jpeg'].includes(template.outputFormat)?'jpeg':'png';
+      const outputExtension=format==='jpeg'?'jpg':'png';
+      return {
+        id:resultId,templateName:template.name,status:'queued',format,
+        fileName:`NiDi_${safeFilePart(stem)}_${safeFilePart(template.name)}.${outputExtension}`,
+        path:path.join(AUTO_OUTPUT_DIR,id,`${resultId}.${outputExtension}`),
+      };
+    });
+    const job={id,name:originalName,status:'queued',createdAt:now,updatedAt:now,completed:0,inputPath,selectedTemplates:selection.selectedTemplates,outputs};
+    automaticJobs.set(id,job);
+    void runAutomaticJob(job).catch(error=>{
+      console.error(`Proses otomatis ${id} gagal:`,error.message);
+      for(const output of job.outputs)if(output.status==='queued'||output.status==='processing'){
+        output.status='error';output.error='Server tidak dapat memproses foto ini.';job.completed++;
+      }
+      job.status='error';job.updatedAt=Date.now();
+    });
+    return json(res,202,publicAutomaticJob(job));
+  }
+  const outputMatch=url.match(/^\/api\/automatic-processing\/jobs\/([\da-f-]{36})\/outputs\/([\da-f-]{36})$/i);
+  if(req.method==='GET'&&outputMatch){
+    const job=automaticJobs.get(outputMatch[1]);
+    const output=job?.outputs.find(item=>item.id===outputMatch[2]);
+    if(!output)return json(res,404,{error:'Hasil pemrosesan tidak ditemukan.'});
+    if(output.status!=='done')return json(res,409,{error:'Hasil belum siap diunduh.'});
+    const type=output.format==='jpeg'?'image/jpeg':'image/png';
+    res.writeHead(200,{'Content-Type':type,'Content-Length':(await fs.promises.stat(output.path)).size,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Disposition':`attachment; filename="${output.fileName}"`});
+    return fs.createReadStream(output.path).pipe(res);
+  }
+  const jobMatch=url.match(/^\/api\/automatic-processing\/jobs\/([\da-f-]{36})$/i);
+  if(req.method==='GET'&&jobMatch){
+    const job=automaticJobs.get(jobMatch[1]);
+    return job?json(res,200,publicAutomaticJob(job)):json(res,404,{error:'Proses tidak ditemukan.'});
   }
   if(req.method==='POST'&&url==='/api/upload'){
     if(!String(req.headers['content-type']||'').toLowerCase().startsWith('image/'))return json(res,415,{error:'Pilih file gambar untuk diimpor.'});
