@@ -28,6 +28,14 @@ Pengaturan HSL, warna, cahaya, kurva, efek, roda warna, dan format ekspor disimp
 
 ## Automatic Processing
 
-Pilih beberapa template dari Template Library, lalu simpan pilihannya di `Automatic_Processing/template_settings.json`. Foto yang dikirim melalui `POST /api/automatic-processing/jobs` disimpan di `Automatic_Processing/input/<id>/`; hasil per template berada di `Automatic_Processing/output/<id>/`. Gunakan `GET /api/automatic-processing/jobs` untuk status dan tautan unduhan. Renderer server memakai algoritme koreksi dan pemrosesan tile yang sama dengan editor browser. Tidak ada batas ukuran atau jumlah piksel buatan aplikasi untuk alur ini; pemrosesan tetap dibatasi kapasitas disk dan perangkat. File proses dibersihkan setelah enam jam.
+Tab Automatic Processing hanya mengatur template dan `Delete After`; upload, status, dan unduh hasil dilakukan lewat API. Pengaturan disimpan di `Automatic_Processing/template_settings.json`. `Delete After` berlaku per foto dan mulai dihitung setelah semua template selesai. Server menghapus file input dan semua hasil saat timer habis. Nilainya 1–10.080 menit; default 60 menit.
 
-API pilihan template memakai `GET` dan `POST /api/automatic-processing/templates`. Upload menerima satu file gambar per permintaan dengan nama file pada header `X-File-Name`; antarmuka mengirim beberapa permintaan secara bersamaan. Worker render berjalan pada thread terpisah dengan dua proses paralel secara default. Jumlahnya dapat diatur lewat `AUTO_RENDER_WORKERS` hingga maksimal 4.
+API pilihan template memakai `GET` dan `POST /api/automatic-processing/templates`. Contoh body untuk menyimpan pengaturan:
+
+```json
+{"templateNames":["hehe"],"deleteAfterMinutes":60}
+```
+
+Upload satu gambar mentah per permintaan ke `POST /api/automatic-processing/jobs` dengan `Content-Type: image/jpeg` (sesuaikan format) dan header `X-File-Name` yang di-URL-encode. Respons `202` berisi `jobId`; `GET /api/automatic-processing/jobs/:jobId` memberi status dan URL unduhan. Daftar proses tersedia di `GET /api/automatic-processing/jobs`. Tiap hasil diunduh lewat URL `/api/automatic-processing/jobs/:jobId/outputs/:outputId`.
+
+Renderer server memakai algoritme koreksi dan pemrosesan tile yang sama dengan editor browser. Satu foto menghasilkan satu file untuk setiap template terpilih, dan tiap hasil dirender secara paralel. Upload tidak memiliki batas ukuran atau jumlah piksel buatan aplikasi; kapasitas disk dan perangkat tetap berlaku. Maksimal 20 worker render berjalan bersamaan secara default. Jumlahnya dapat diatur lewat `AUTO_RENDER_WORKERS` dari 1 hingga 20.

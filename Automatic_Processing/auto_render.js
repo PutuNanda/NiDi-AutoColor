@@ -7,9 +7,10 @@ const sharp = require('sharp');
 const { pipeline } = require('node:stream/promises');
 
 const configuredWorkers = Number(process.env.AUTO_RENDER_WORKERS);
+const MAX_RENDER_WORKERS = 20;
 const maxWorkers = Number.isInteger(configuredWorkers) && configuredWorkers > 0
-  ? Math.min(4, configuredWorkers)
-  : 2;
+  ? Math.min(MAX_RENDER_WORKERS, configuredWorkers)
+  : MAX_RENDER_WORKERS;
 const workerPath = path.join(__dirname, 'auto_render_worker.js');
 const queue = [];
 let activeWorkers = 0;

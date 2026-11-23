@@ -16,29 +16,27 @@ const AUTO_SETTINGS_FILE = path.join(AUTO_DIR, 'template_settings.json');
 const MAX_UPLOAD = 35 * 1024 * 1024;
 const MAX_PIXELS = 80_000_000;
 const TTL = 30 * 60 * 1000;
-const AUTO_JOB_TTL = 6 * 60 * 60 * 1000;
-const MAX_AUTO_JOBS = 100;
+const MIN_DELETE_AFTER_MINUTES = 1;
+const MAX_DELETE_AFTER_MINUTES = 10080;
+const DEFAULT_DELETE_AFTER_MINUTES = 60;
+const MAX_ACTIVE_AUTO_JOBS = 100;
 const images = new Map();
 const automaticJobs = new Map();
+const automaticDeletionTimers = new Map();
 fs.mkdirSync(TEMPLATE_DIR, { recursive: true });
 fs.mkdirSync(AUTO_INPUT_DIR, { recursive: true });
 fs.mkdirSync(AUTO_OUTPUT_DIR, { recursive: true });
 if (!fs.existsSync(AUTO_SETTINGS_FILE)) {
-  fs.writeFileSync(AUTO_SETTINGS_FILE, `${JSON.stringify({ schemaVersion: 1, updatedAt: null, selectedTemplates: [] }, null, 2)}\n`);
+  fs.writeFileSync(AUTO_SETTINGS_FILE, `${JSON.stringify({ schemaVersion: 1, updatedAt: null, deleteAfterMinutes: DEFAULT_DELETE_AFTER_MINUTES, selectedTemplates: [] }, null, 2)}\n`);
 }
 setInterval(() => {
   const now = Date.now();
   for (const [id, item] of images) if (now - item.created > TTL) images.delete(id);
   for (const [id, job] of automaticJobs) {
-    if (Date.now() - job.createdAt > AUTO_JOB_TTL && !['queued', 'processing'].includes(job.status)) {
-      automaticJobs.delete(id);
-      void Promise.all([
-        fs.promises.rm(path.join(AUTO_INPUT_DIR, id), { recursive: true, force: true }),
-        fs.promises.rm(path.join(AUTO_OUTPUT_DIR, id), { recursive: true, force: true }),
-      ]).catch(error => console.error('Pembersihan file pemrosesan otomatis gagal:', error.message));
-    }
+    if (job.expiresAt && job.expiresAt <= now && !['queued', 'processing'].includes(job.status)) void deleteAutomaticJobFiles(id);
   }
-}, 60_000).unref();
+}, 5_000).unref();
+void restoreAutomaticDeletionTimers();
 const bands = ['red', 'orange', 'yellow', 'green', 'aqua', 'blue', 'purple', 'magenta'];
 const bandHue = [0, 30, 60, 120, 180, 220, 275, 325];
 const OUTPUT_MIME = { jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', avif: 'image/avif', tiff: 'image/tiff', gif: 'image/gif' };
@@ -207,15 +205,19 @@ async function listTemplates() {
 async function readAutomaticTemplateSettings() {
   const settings=JSON.parse(await fs.promises.readFile(AUTO_SETTINGS_FILE,'utf8'));
   if(!settings||!Array.isArray(settings.selectedTemplates))throw new Error('File template_settings.json tidak valid.');
+  const savedDeleteAfter=Number(settings.deleteAfterMinutes);
+  const deleteAfterMinutes=Number.isInteger(savedDeleteAfter)&&savedDeleteAfter>=MIN_DELETE_AFTER_MINUTES&&savedDeleteAfter<=MAX_DELETE_AFTER_MINUTES
+    ?savedDeleteAfter:DEFAULT_DELETE_AFTER_MINUTES;
   return {
     schemaVersion:1,
     updatedAt:settings.updatedAt||null,
+    deleteAfterMinutes,
     selectedTemplates:settings.selectedTemplates.filter(item=>item&&typeof item.name==='string'&&item.settings&&typeof item.settings==='object')
       .map(item=>({name:templateName(item.name),outputFormat:['jpg','jpeg'].includes(item.outputFormat)?'jpeg':'png',settings:cleanSettings(item.settings)})),
   };
 }
-async function writeAutomaticTemplateSettings(selectedTemplates) {
-  const value={schemaVersion:1,updatedAt:new Date().toISOString(),selectedTemplates};
+async function writeAutomaticTemplateSettings(selectedTemplates,deleteAfterMinutes) {
+  const value={schemaVersion:1,updatedAt:new Date().toISOString(),deleteAfterMinutes,selectedTemplates};
   const temporaryFile=path.join(AUTO_DIR,`template_settings.${randomUUID()}.tmp`);
   await fs.promises.writeFile(temporaryFile,`${JSON.stringify(value,null,2)}\n`,{flag:'wx'});
   await fs.promises.rename(temporaryFile,AUTO_SETTINGS_FILE);
@@ -224,10 +226,74 @@ async function writeAutomaticTemplateSettings(selectedTemplates) {
 function safeFilePart(value) {
   return String(value||'').normalize('NFKD').replace(/[^A-Za-z0-9_-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,80)||'foto';
 }
+function scheduleDiskCleanup(id,expiresAt) {
+  if(!/^[\da-f-]{36}$/i.test(id)||!Number.isFinite(expiresAt))return;
+  const existing=automaticDeletionTimers.get(id);
+  if(existing)clearTimeout(existing);
+  const delay=Math.min(2_147_000_000,Math.max(0,expiresAt-Date.now()));
+  const timer=setTimeout(()=>{
+    automaticDeletionTimers.delete(id);
+    if(expiresAt<=Date.now())void deleteAutomaticJobFiles(id);
+    else scheduleDiskCleanup(id,expiresAt);
+  },delay);
+  timer.unref();automaticDeletionTimers.set(id,timer);
+}
+async function deleteAutomaticJobFiles(id) {
+  if(!/^[\da-f-]{36}$/i.test(id))return;
+  automaticJobs.delete(id);
+  const timer=automaticDeletionTimers.get(id);
+  if(timer)clearTimeout(timer);
+  automaticDeletionTimers.delete(id);
+  await Promise.all([
+    fs.promises.rm(path.join(AUTO_INPUT_DIR,id),{recursive:true,force:true}),
+    fs.promises.rm(path.join(AUTO_OUTPUT_DIR,id),{recursive:true,force:true}),
+  ]).catch(error=>{
+    console.error('Pembersihan file pemrosesan otomatis gagal:',error.message);
+    scheduleDiskCleanup(id,Date.now()+30_000);
+  });
+}
+async function restoreAutomaticDeletionTimers() {
+  try{
+    const entries=await fs.promises.readdir(AUTO_INPUT_DIR,{withFileTypes:true});
+    for(const entry of entries){
+      if(!entry.isDirectory()||!/^[\da-f-]{36}$/i.test(entry.name))continue;
+      try{
+        const retention=JSON.parse(await fs.promises.readFile(path.join(AUTO_INPUT_DIR,entry.name,'retention.json'),'utf8'));
+        scheduleDiskCleanup(entry.name,Number(retention.expiresAt));
+      }catch{
+        try{
+          const [inputStats,outputStats]=await Promise.all([
+            fs.promises.stat(path.join(AUTO_INPUT_DIR,entry.name)),
+            fs.promises.stat(path.join(AUTO_OUTPUT_DIR,entry.name)).catch(()=>null),
+          ]);
+          const latestWrite=Math.max(inputStats.mtimeMs,outputStats?.mtimeMs||0);
+          scheduleDiskCleanup(entry.name,latestWrite+DEFAULT_DELETE_AFTER_MINUTES*60_000);
+        }catch{}
+      }
+    }
+  }catch(error){console.error('Pemulihan timer penghapusan gagal:',error.message);}
+}
+async function setAutomaticJobExpiry(job) {
+  job.completedAt=Date.now();
+  job.expiresAt=job.completedAt+job.deleteAfterMinutes*60_000;
+  job.updatedAt=job.completedAt;
+  scheduleDiskCleanup(job.id,job.expiresAt);
+  const file=path.join(AUTO_INPUT_DIR,job.id,'retention.json');
+  const temporary=`${file}.${randomUUID()}.tmp`;
+  try{
+    await fs.promises.writeFile(temporary,`${JSON.stringify({deleteAfterMinutes:job.deleteAfterMinutes,completedAt:job.completedAt,expiresAt:job.expiresAt},null,2)}\n`,{flag:'wx'});
+    await fs.promises.rename(temporary,file);
+  }catch(error){
+    await fs.promises.rm(temporary,{force:true}).catch(()=>{});
+    console.error(`Penyimpanan timer hapus untuk ${job.id} gagal:`,error.message);
+  }
+}
 function publicAutomaticJob(job) {
   return {
     id:job.id,jobId:job.id,name:job.name,status:job.status,createdAt:new Date(job.createdAt).toISOString(),
     updatedAt:new Date(job.updatedAt).toISOString(),completed:job.completed,total:job.outputs.length,
+    deleteAfterMinutes:job.deleteAfterMinutes,completedAt:job.completedAt?new Date(job.completedAt).toISOString():null,
+    expiresAt:job.expiresAt?new Date(job.expiresAt).toISOString():null,
     outputs:job.outputs.map(output=>({
       id:output.id,templateName:output.templateName,status:output.status,error:output.error||null,
       fileName:output.fileName,
@@ -260,7 +326,7 @@ async function runAutomaticJob(job) {
   }
   const successes=job.outputs.filter(output=>output.status==='done').length;
   job.status=successes===job.outputs.length?'done':successes?'partial':'error';
-  job.updatedAt=Date.now();
+  await setAutomaticJobExpiry(job);
 }
 async function api(req,res,url) {
   if(req.method==='GET'&&url==='/api/templates'){
@@ -304,6 +370,10 @@ async function api(req,res,url) {
     catch(error){return json(res,error.status||400,{error:'Pilihan template tidak valid.'});}
     if(!body||typeof body!=='object'||Array.isArray(body)||!Array.isArray(body.templateNames))return json(res,400,{error:'Pilihan template tidak valid.'});
     if(body.templateNames.length>20)return json(res,400,{error:'Maksimal 20 template dapat dipilih.'});
+    const currentSettings=await readAutomaticTemplateSettings();
+    const deleteAfterMinutes=body.deleteAfterMinutes===undefined?currentSettings.deleteAfterMinutes:Number(body.deleteAfterMinutes);
+    if(!Number.isInteger(deleteAfterMinutes)||deleteAfterMinutes<MIN_DELETE_AFTER_MINUTES||deleteAfterMinutes>MAX_DELETE_AFTER_MINUTES)
+      return json(res,400,{error:`Delete After harus diatur antara ${MIN_DELETE_AFTER_MINUTES} dan ${MAX_DELETE_AFTER_MINUTES} menit.`});
     const available=await listTemplates();
     const selected=[];const seen=new Set();
     for(const rawName of body.templateNames){
@@ -314,7 +384,7 @@ async function api(req,res,url) {
       seen.add(key);
       selected.push({name:template.name,outputFormat:template.outputFormat,settings:template.settings});
     }
-    const saved=await writeAutomaticTemplateSettings(selected);
+    const saved=await writeAutomaticTemplateSettings(selected,deleteAfterMinutes);
     return json(res,200,saved);
   }
   if(req.method==='GET'&&url==='/api/automatic-processing/jobs'){
@@ -356,15 +426,8 @@ async function api(req,res,url) {
     await fs.promises.rename(uploadPath,inputPath);
     const selection=await readAutomaticTemplateSettings();
     if(!selection.selectedTemplates.length){await fs.promises.rm(inputDirectory,{recursive:true,force:true});return json(res,400,{error:'Pilih dan simpan minimal satu template terlebih dahulu.'});}
-    if(automaticJobs.size>=MAX_AUTO_JOBS){
-      const removable=[...automaticJobs.values()].filter(job=>!['queued','processing'].includes(job.status)).sort((a,b)=>a.createdAt-b.createdAt)[0];
-      if(!removable){await fs.promises.rm(inputDirectory,{recursive:true,force:true});return json(res,429,{error:'Antrean penuh. Tunggu proses yang berjalan selesai terlebih dahulu.'});}
-      automaticJobs.delete(removable.id);
-      await Promise.all([
-        fs.promises.rm(path.join(AUTO_INPUT_DIR,removable.id),{recursive:true,force:true}),
-        fs.promises.rm(path.join(AUTO_OUTPUT_DIR,removable.id),{recursive:true,force:true}),
-      ]);
-    }
+    const activeJobs=[...automaticJobs.values()].filter(job=>['queued','processing'].includes(job.status)).length;
+    if(activeJobs>=MAX_ACTIVE_AUTO_JOBS){await fs.promises.rm(inputDirectory,{recursive:true,force:true});return json(res,429,{error:'Antrean sedang penuh. Coba unggah kembali setelah sebagian proses selesai.'});}
     const now=Date.now();
     const outputs=selection.selectedTemplates.map(template=>{
       const resultId=randomUUID(),format=['jpg','jpeg'].includes(template.outputFormat)?'jpeg':'png';
@@ -375,14 +438,14 @@ async function api(req,res,url) {
         path:path.join(AUTO_OUTPUT_DIR,id,`${resultId}.${outputExtension}`),
       };
     });
-    const job={id,name:originalName,status:'queued',createdAt:now,updatedAt:now,completed:0,inputPath,selectedTemplates:selection.selectedTemplates,outputs};
+    const job={id,name:originalName,status:'queued',createdAt:now,updatedAt:now,completed:0,deleteAfterMinutes:selection.deleteAfterMinutes,inputPath,selectedTemplates:selection.selectedTemplates,outputs};
     automaticJobs.set(id,job);
     void runAutomaticJob(job).catch(error=>{
       console.error(`Proses otomatis ${id} gagal:`,error.message);
       for(const output of job.outputs)if(output.status==='queued'||output.status==='processing'){
         output.status='error';output.error='Server tidak dapat memproses foto ini.';job.completed++;
       }
-      job.status='error';job.updatedAt=Date.now();
+      job.status='error';void setAutomaticJobExpiry(job);
     });
     return json(res,202,publicAutomaticJob(job));
   }
