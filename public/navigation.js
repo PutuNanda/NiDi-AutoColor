@@ -4,11 +4,13 @@
   const editorView = document.querySelector('#editor-view');
   const navigationRoot = document.querySelector('#navigation-root');
   const templateRoot = document.querySelector('#template-view-root');
+  const automaticProcessingRoot = document.querySelector('#automatic-processing-view-root');
   const modalRoot = document.querySelector('#template-modal-root');
   const brandToggle = document.querySelector('#brand-menu-toggle');
   let sidebar = null;
   let backdrop = null;
   let templateView = null;
+  let automaticProcessingView = null;
 
   function setSidebarOpen(open) {
     if (!sidebar || !backdrop) return;
@@ -25,11 +27,14 @@
 
   function show(view) {
     const showTemplates = view === 'templates' && Boolean(templateView);
-    editorView.hidden = showTemplates;
+    const showAutomaticProcessing = view === 'automatic-processing' && Boolean(automaticProcessingView);
+    editorView.hidden = showTemplates || showAutomaticProcessing;
     if (templateView) templateView.hidden = !showTemplates;
+    if (automaticProcessingView) automaticProcessingView.hidden = !showAutomaticProcessing;
     document.querySelectorAll('[data-app-view]').forEach(button => {
       if (button.classList.contains('sidebar-link')) {
-        const active = button.dataset.appView === (showTemplates ? 'templates' : 'editor');
+        const activeView = showTemplates ? 'templates' : showAutomaticProcessing ? 'automatic-processing' : 'editor';
+        const active = button.dataset.appView === activeView;
         button.classList.toggle('is-active', active);
         button.setAttribute('aria-current', active ? 'page' : 'false');
       }
@@ -43,23 +48,27 @@
 
   async function loadFragments() {
     try {
-      const [navigationHtml, templateHtml, modalHtml] = await Promise.all([
+      const [navigationHtml, templateHtml, automaticProcessingHtml, modalHtml] = await Promise.all([
         fetch('/partials/sidebar.html').then(response => { if (!response.ok) throw new Error('Navigation could not be loaded.'); return response.text(); }),
         fetch('/views/template-library.html').then(response => { if (!response.ok) throw new Error('Template Library could not be loaded.'); return response.text(); }),
+        fetch('/views/automatic-processing.html').then(response => { if (!response.ok) throw new Error('Automatic Processing could not be loaded.'); return response.text(); }),
         fetch('/partials/template-modals.html').then(response => { if (!response.ok) throw new Error('Template dialogs could not be loaded.'); return response.text(); }),
       ]);
       navigationRoot.innerHTML = navigationHtml;
       templateRoot.innerHTML = templateHtml;
+      automaticProcessingRoot.innerHTML = automaticProcessingHtml;
       modalRoot.innerHTML = modalHtml;
       sidebar = navigationRoot.querySelector('#app-sidebar');
       backdrop = navigationRoot.querySelector('#sidebar-backdrop');
       templateView = templateRoot.querySelector('#template-library-view');
+      automaticProcessingView = automaticProcessingRoot.querySelector('#automatic-processing-view');
 
       brandToggle.setAttribute('aria-controls', 'app-sidebar');
       navigationRoot.querySelector('#sidebar-close').addEventListener('click', () => setSidebarOpen(false));
       backdrop.addEventListener('click', () => setSidebarOpen(false));
       navigationRoot.querySelectorAll('[data-app-view]').forEach(button => button.addEventListener('click', () => show(button.dataset.appView)));
       templateView.querySelectorAll('[data-app-view]').forEach(button => button.addEventListener('click', () => show(button.dataset.appView)));
+      automaticProcessingView.querySelectorAll('[data-app-view]').forEach(button => button.addEventListener('click', () => show(button.dataset.appView)));
       document.addEventListener('keydown', event => {
         if (event.key === 'Escape' && sidebar.classList.contains('is-open')) setSidebarOpen(false);
       });
