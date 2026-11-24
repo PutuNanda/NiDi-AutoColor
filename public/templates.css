@@ -2,6 +2,7 @@
 .template-kicker, .modal-kicker { margin: 0 0 9px; color: #a99aff; font: 9px var(--mono); letter-spacing: 1.5px; }
 .template-page-header h1 { margin: 0; color: #f0f0f5; font-size: clamp(25px, 3vw, 34px); letter-spacing: -.7px; }
 .template-page-description { max-width: 610px; margin: 10px 0 0; color: #a0a2b8; font-size: 12px; line-height: 1.6; }
+.template-library-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .template-back-button { flex: none; }
 .template-library-status { max-width: 1180px; min-height: 20px; margin: 0 auto 12px; color: #a0a2b8; font: 10px var(--mono); }
 .template-library-status.is-error { color: #ff9d9d; }
@@ -40,6 +41,7 @@
 @media (max-width: 700px) {
   .template-library-view { padding: 77px 16px 34px; }
   .template-page-header { flex-direction: column; margin-bottom: 22px; }
+  .template-library-actions { justify-content: flex-start; }
   .template-back-button { align-self: flex-start; }
   .app-modal { padding: 24px 20px; }
 }

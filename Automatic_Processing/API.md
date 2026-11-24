@@ -6,7 +6,7 @@ The Automatic Processing page configures selected templates and `deleteAfterMinu
 
 ## Configure templates and retention
 
-`GET /api/templates` lists saved templates. Save the selected names and retention duration with:
+`GET /api/templates` lists saved templates stored as `.nd` files containing JSON data. Save the selected names and retention duration with:
 
 ```http
 POST /api/automatic-processing/templates

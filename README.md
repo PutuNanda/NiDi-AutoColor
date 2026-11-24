@@ -24,7 +24,7 @@ Jalankan `npm run build:formats` setelah memasang dependensi untuk membangun dec
 
 ## Template
 
-Pengaturan HSL, warna, cahaya, kurva, efek, roda warna, dan format ekspor disimpan sebagai file JSON di folder `Template` pada root proyek. File ini hanya berisi konfigurasi, tidak menyimpan foto. Nama template menerima huruf ASCII, angka, spasi, underscore, dan tanda hubung hingga 64 karakter. Template yang diterapkan tidak mengubah file template asal; simpan perubahan sebagai template baru.
+Pengaturan HSL, warna, cahaya, kurva, efek, roda warna, dan format ekspor disimpan sebagai file `.nd` berisi JSON di folder `Template` pada root proyek. File ini hanya berisi konfigurasi, tidak menyimpan foto. Dari Template Library, setiap template dapat diunduh atau diimpor sebagai `.nd`; `Download All Template` membuat satu file `.nd` gabungan yang juga dapat diimpor kembali. Nama template menerima huruf ASCII, angka, spasi, underscore, dan tanda hubung hingga 64 karakter. Template `.json` lama yang valid dipindahkan ke `.nd` saat server mulai. Template yang diterapkan tidak mengubah file template asal; simpan perubahan sebagai template baru.
 
 ## Automatic Processing
 

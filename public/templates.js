@@ -43,7 +43,7 @@
 
   function openDeleteModal(name) {
     pendingDelete = name;
-    $('#delete-template-name').textContent = `${name}.json`;
+    $('#delete-template-name').textContent = `${name}.nd`;
     $('#delete-template-error').hidden = true;
     $('#delete-template-modal').hidden = false;
     requestAnimationFrame(() => $('#delete-template-confirm').focus());
@@ -111,6 +111,7 @@
     try {
       const result = await request('/api/templates');
       templates = result.templates || [];
+      $('#template-download-all').disabled = templates.length === 0;
       if (!templates.length) {
         empty.hidden = false;
         setLibraryStatus('No saved templates.');
@@ -173,11 +174,66 @@
     const href = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = href;
-    link.download = `${template.name}.json`;
+    link.download = `${template.name}.nd`;
     document.body.append(link);
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(href), 1000);
+  }
+
+  function downloadAllTemplates() {
+    if (!templates.length) return;
+    const data = {
+      schemaVersion: 1,
+      templates: templates.map(template => ({
+        schemaVersion: 1,
+        name: template.name,
+        createdAt: template.createdAt,
+        outputFormat: template.outputFormat,
+        settings: template.settings,
+      })),
+    };
+    const blob = new Blob([`${JSON.stringify(data, null, 2)}\n`], { type: 'application/json' });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = href;
+    link.download = 'nidi-all-templates.nd';
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 1000);
+  }
+
+  async function importTemplateFiles(files) {
+    const importButton = $('#template-import-button');
+    const input = $('#template-import-input');
+    if (!files.length) return;
+    importButton.disabled = true;
+    setLibraryStatus('Reading .nd file(s)…');
+    try {
+      const imported = [];
+      for (const file of files) {
+        if (!file.name.toLowerCase().endsWith('.nd')) throw new Error(`"${file.name}" must use the .nd extension.`);
+        let data;
+        try { data = JSON.parse(await file.text()); }
+        catch { throw new Error(`"${file.name}" does not contain valid JSON data.`); }
+        if (Array.isArray(data)) imported.push(...data);
+        else if (Array.isArray(data?.templates)) imported.push(...data.templates);
+        else imported.push(data);
+      }
+      const result = await request('/api/templates/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ templates: imported }),
+      });
+      await loadTemplates();
+      setLibraryStatus(`${result.templates.length} template${result.templates.length === 1 ? '' : 's'} imported.`);
+    } catch (error) {
+      setLibraryStatus(error.message, true);
+    } finally {
+      importButton.disabled = false;
+      input.value = '';
+    }
   }
 
   async function deleteTemplate() {
@@ -187,7 +243,7 @@
     confirm.disabled = true;
     error.hidden = true;
     try {
-      await request(`/api/templates/${encodeURIComponent(`${pendingDelete}.json`)}`, { method: 'DELETE' });
+      await request(`/api/templates/${encodeURIComponent(`${pendingDelete}.nd`)}`, { method: 'DELETE' });
       closeModal($('#delete-template-modal'));
       pendingDelete = '';
       await loadTemplates();
@@ -217,6 +273,9 @@
     if (initialized) return;
     initialized = true;
     $('#save-template-button').addEventListener('click', openSaveModal);
+    $('#template-import-button').addEventListener('click', () => $('#template-import-input').click());
+    $('#template-import-input').addEventListener('change', event => void importTemplateFiles([...event.currentTarget.files]));
+    $('#template-download-all').addEventListener('click', downloadAllTemplates);
     $('#save-template-form').addEventListener('submit', saveTemplate);
     $('#delete-template-confirm').addEventListener('click', deleteTemplate);
     $('#template-list').addEventListener('click', handleListClick);

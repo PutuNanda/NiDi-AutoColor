@@ -187,20 +187,72 @@ async function listTemplates() {
   const entries=await fs.promises.readdir(TEMPLATE_DIR,{withFileTypes:true});
   const templates=[];
   for(const entry of entries){
-    if(!entry.isFile()||!entry.name.toLowerCase().endsWith('.json'))continue;
+    if(!entry.isFile()||!entry.name.toLowerCase().endsWith('.nd'))continue;
     try{
       const filename=path.join(TEMPLATE_DIR,entry.name);
       const stats=await fs.promises.stat(filename);
       if(stats.size>256*1024)continue;
       const data=JSON.parse(await fs.promises.readFile(filename,'utf8'));
       const name=templateName(data.name);
-      if(`${name}.json`.toLowerCase()!==entry.name.toLowerCase()||!data.settings||typeof data.settings!=='object'||Array.isArray(data.settings))continue;
+      if(`${name}.nd`.toLowerCase()!==entry.name.toLowerCase()||!data.settings||typeof data.settings!=='object'||Array.isArray(data.settings))continue;
       const outputFormat=['png','jpg','jpeg'].includes(data.outputFormat)?data.outputFormat:'png';
       templates.push({name,createdAt:String(data.createdAt||stats.mtime.toISOString()),outputFormat,settings:cleanSettings(data.settings)});
     }catch{}
   }
   templates.sort((a,b)=>a.name.localeCompare(b.name,'en',{sensitivity:'base'}));
   return templates;
+}
+async function migrateLegacyTemplates() {
+  const entries=await fs.promises.readdir(TEMPLATE_DIR,{withFileTypes:true});
+  for(const entry of entries){
+    if(!entry.isFile()||!entry.name.toLowerCase().endsWith('.json'))continue;
+    try{
+      const source=path.join(TEMPLATE_DIR,entry.name);
+      const stats=await fs.promises.stat(source);
+      if(stats.size>256*1024)continue;
+      const data=JSON.parse(await fs.promises.readFile(source,'utf8'));
+      const name=templateName(data.name);
+      if(`${name}.json`.toLowerCase()!==entry.name.toLowerCase()||!data.settings||typeof data.settings!=='object'||Array.isArray(data.settings))continue;
+      const target=path.join(TEMPLATE_DIR,`${name}.nd`);
+      try{await fs.promises.access(target);continue;}catch(error){if(error.code!=='ENOENT')throw error;}
+      await fs.promises.rename(source,target);
+    }catch(error){if(error.code!=='ENOENT')console.error(`Migrasi template ${entry.name} gagal:`,error.message);}
+  }
+}
+async function importTemplates(input) {
+  const rawTemplates=Array.isArray(input)?input:Array.isArray(input?.templates)?input.templates:[input];
+  if(!rawTemplates.length||rawTemplates.length>100)throw Object.assign(new Error('File harus berisi 1–100 template.'),{status:400});
+  const staged=[];const seen=new Set();
+  for(const raw of rawTemplates){
+    if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Object.assign(new Error('Data template tidak valid.'),{status:400});
+    let name;
+    try{name=templateName(raw.name);}catch(error){throw Object.assign(error,{status:400});}
+    if(!raw.settings||typeof raw.settings!=='object'||Array.isArray(raw.settings))throw Object.assign(new Error(`Pengaturan template "${name}" tidak valid.`),{status:400});
+    const key=name.toLowerCase();
+    if(seen.has(key))throw Object.assign(new Error(`File berisi nama template ganda: "${name}".`),{status:400});
+    seen.add(key);
+    const createdAt=typeof raw.createdAt==='string'&&Number.isFinite(Date.parse(raw.createdAt))?raw.createdAt:new Date().toISOString();
+    const outputFormat=['png','jpg','jpeg'].includes(raw.outputFormat)?raw.outputFormat:'png';
+    staged.push({name,createdAt,outputFormat,settings:cleanSettings(raw.settings)});
+  }
+  const existing=(await fs.promises.readdir(TEMPLATE_DIR)).map(name=>name.toLowerCase());
+  const conflict=staged.find(template=>existing.includes(`${template.name}.nd`.toLowerCase()));
+  if(conflict)throw Object.assign(new Error(`Template "${conflict.name}" sudah ada. Ubah nama di file .nd sebelum mengimpor.`),{status:409});
+  const created=[];
+  try{
+    for(const template of staged){
+      const filename=`${template.name}.nd`;
+      const file=path.join(TEMPLATE_DIR,filename);
+      const data={schemaVersion:1,...template};
+      await fs.promises.writeFile(file,`${JSON.stringify(data,null,2)}\n`,{flag:'wx'});
+      created.push(file);
+    }
+  }catch(error){
+    await Promise.all(created.map(file=>fs.promises.unlink(file).catch(()=>{})));
+    if(error.code==='EEXIST')throw Object.assign(new Error('Salah satu template dengan nama tersebut sudah ada.'),{status:409});
+    throw error;
+  }
+  return staged.map(({name,createdAt,outputFormat,settings})=>({name,createdAt,outputFormat,settings}));
 }
 async function readAutomaticTemplateSettings() {
   const settings=JSON.parse(await fs.promises.readFile(AUTO_SETTINGS_FILE,'utf8'));
@@ -339,7 +391,7 @@ async function api(req,res,url) {
     if(!body||typeof body!=='object'||Array.isArray(body))return json(res,400,{error:'Data template tidak valid.'});
     const name=templateName(body.name);
     if(!body.settings||typeof body.settings!=='object'||Array.isArray(body.settings))return json(res,400,{error:'Pengaturan template tidak valid.'});
-    const filename=`${name}.json`;
+    const filename=`${name}.nd`;
     const existing=await fs.promises.readdir(TEMPLATE_DIR);
     if(existing.some(entry=>entry.toLowerCase()===filename.toLowerCase()))return json(res,409,{error:'Nama template sudah digunakan. Pilih nama lain.'});
     const outputFormat=['png','jpg','jpeg'].includes(body.outputFormat)?body.outputFormat:'png';
@@ -348,14 +400,21 @@ async function api(req,res,url) {
     catch(error){if(error.code==='EEXIST')return json(res,409,{error:'Nama template sudah digunakan. Pilih nama lain.'});throw error;}
     return json(res,201,{template});
   }
+  if(req.method==='POST'&&url==='/api/templates/import'){
+    let body;
+    try{body=JSON.parse((await readBody(req,2*1024*1024)).toString());}
+    catch(error){return json(res,error.status||400,{error:'File .nd tidak berisi JSON template yang valid.'});}
+    try{return json(res,201,{templates:await importTemplates(body)});}
+    catch(error){return json(res,error.status||400,{error:error.status?error.message:'Template tidak dapat diimpor.'});}
+  }
   if(req.method==='DELETE'&&url.startsWith('/api/templates/')){
     let filename;
     try{filename=decodeURIComponent(url.slice('/api/templates/'.length));}
     catch{return json(res,400,{error:'Nama template tidak valid.'});}
-    if(!filename.toLowerCase().endsWith('.json'))return json(res,400,{error:'File template harus berekstensi .json.'});
-    const requestedName=templateName(filename.slice(0,-5));
+    if(!filename.toLowerCase().endsWith('.nd'))return json(res,400,{error:'File template harus berekstensi .nd.'});
+    const requestedName=templateName(filename.slice(0,-3));
     const entries=await fs.promises.readdir(TEMPLATE_DIR);
-    const existing=entries.find(entry=>entry.toLowerCase()===`${requestedName}.json`.toLowerCase());
+    const existing=entries.find(entry=>entry.toLowerCase()===`${requestedName}.nd`.toLowerCase());
     if(!existing)return json(res,404,{error:'Template tidak ditemukan.'});
     await fs.promises.unlink(path.join(TEMPLATE_DIR,existing));
     return json(res,200,{deleted:requestedName});
@@ -499,4 +558,5 @@ function staticFile(req,res,pathname){let decoded;try{decoded=decodeURIComponent
   if(file.toLowerCase()!==PUBLIC_DIR.toLowerCase()&&!file.toLowerCase().startsWith(prefix.toLowerCase())){res.writeHead(403);return res.end('Forbidden');}
   fs.stat(file,(err,stat)=>{if(err||!stat.isFile()){res.writeHead(404);return res.end('Not found');}res.writeHead(200,{'Content-Type':mime[path.extname(file).toLowerCase()]||'application/octet-stream','Content-Length':stat.size,'Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'});if(req.method==='HEAD')return res.end();fs.createReadStream(file).pipe(res);});
 }
-http.createServer((req,res)=>{const url=new URL(req.url,'http://localhost');if(url.pathname.startsWith('/api/')){api(req,res,url.pathname).catch(e=>{if(!res.headersSent&&!res.destroyed)json(res,e.status||500,{error:e.status?e.message:'Terjadi kesalahan di server.'});});return;}if(!['GET','HEAD'].includes(req.method)){res.writeHead(405);return res.end('Method not allowed');}staticFile(req,res,url.pathname);}).listen(PORT,()=>console.log(`NiDi AutoColor berjalan di http://localhost:${PORT}`));
+const server=http.createServer((req,res)=>{const url=new URL(req.url,'http://localhost');if(url.pathname.startsWith('/api/')){api(req,res,url.pathname).catch(e=>{if(!res.headersSent&&!res.destroyed)json(res,e.status||500,{error:e.status?e.message:'Terjadi kesalahan di server.'});});return;}if(!['GET','HEAD'].includes(req.method)){res.writeHead(405);return res.end('Method not allowed');}staticFile(req,res,url.pathname);});
+void migrateLegacyTemplates().then(()=>server.listen(PORT,()=>console.log(`NiDi AutoColor berjalan di http://localhost:${PORT}`))).catch(error=>{console.error('Migrasi template gagal:',error.message);process.exitCode=1;});
