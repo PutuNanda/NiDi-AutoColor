@@ -4,10 +4,13 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const MIN_DELETE_AFTER = 1;
   const MAX_DELETE_AFTER = 10080;
+  const MIN_MAX_WORKERS = 1;
+  const MAX_MAX_WORKERS = 100;
   let initialized = false;
   let templates = [];
   let savedNames = new Set();
   let savedDeleteAfterMinutes = 60;
+  let savedMaxWorkers = 100;
 
   async function requestJson(url, options) {
     const response = await fetch(url, options);
@@ -32,20 +35,27 @@
     return Number.isInteger(value) && value >= MIN_DELETE_AFTER && value <= MAX_DELETE_AFTER;
   }
 
+  function isMaxWorkersValid() {
+    const value = Number($('#automatic-max-workers').value);
+    return Number.isInteger(value) && value >= MIN_MAX_WORKERS && value <= MAX_MAX_WORKERS;
+  }
+
   function hasUnsavedChanges() {
     const names = selectedNames();
     const selectionChanged = names.length !== savedNames.size || names.some(name => !savedNames.has(name));
-    return selectionChanged || Number($('#automatic-delete-after').value) !== savedDeleteAfterMinutes;
+    return selectionChanged || Number($('#automatic-delete-after').value) !== savedDeleteAfterMinutes || Number($('#automatic-max-workers').value) !== savedMaxWorkers;
   }
 
   function syncActions() {
     const validDuration = isDeleteAfterValid();
+    const validMaxWorkers = isMaxWorkersValid();
     const changed = hasUnsavedChanges();
-    $('#automatic-save-templates').disabled = !validDuration || !changed;
+    $('#automatic-save-templates').disabled = !validDuration || !validMaxWorkers || !changed;
     if (!validDuration) setStatus(`Masukkan waktu antara ${MIN_DELETE_AFTER} dan ${MAX_DELETE_AFTER} menit.`, true);
+    else if (!validMaxWorkers) setStatus(`Masukkan Max Parallel Workers antara ${MIN_MAX_WORKERS} dan ${MAX_MAX_WORKERS}.`, true);
     else if (changed) setStatus('Ada perubahan pengaturan yang belum disimpan.');
     else if (!savedNames.size) setStatus('Belum ada template yang dipilih. Buat template di Template Library.');
-    else setStatus(`${savedNames.size} template tersimpan · Delete After ${savedDeleteAfterMinutes} menit.`);
+    else setStatus(`${savedNames.size} template tersimpan. Delete After ${savedDeleteAfterMinutes} menit. Max Parallel Workers ${savedMaxWorkers}.`);
   }
 
   function renderTemplates() {
@@ -92,7 +102,9 @@
       templates = library.templates || [];
       savedNames = new Set((settings.selectedTemplates || []).map(template => template.name));
       savedDeleteAfterMinutes = Number(settings.deleteAfterMinutes) || 60;
+      savedMaxWorkers = Number(settings.maxWorkers) || 100;
       $('#automatic-delete-after').value = String(savedDeleteAfterMinutes);
+      $('#automatic-max-workers').value = String(savedMaxWorkers);
       renderTemplates();
     } catch (error) {
       setStatus(error.message, true);
@@ -100,7 +112,7 @@
   }
 
   async function saveSettings() {
-    if (!isDeleteAfterValid()) { syncActions(); return; }
+    if (!isDeleteAfterValid() || !isMaxWorkersValid()) { syncActions(); return; }
     const button = $('#automatic-save-templates');
     button.disabled = true;
     setStatus('Menyimpan pengaturan...');
@@ -110,11 +122,14 @@
         body: JSON.stringify({
           templateNames: selectedNames(),
           deleteAfterMinutes: Number($('#automatic-delete-after').value),
+          maxWorkers: Number($('#automatic-max-workers').value),
         }),
       });
       savedNames = new Set((result.selectedTemplates || []).map(template => template.name));
       savedDeleteAfterMinutes = Number(result.deleteAfterMinutes) || 60;
+      savedMaxWorkers = Number(result.maxWorkers) || 100;
       $('#automatic-delete-after').value = String(savedDeleteAfterMinutes);
+      $('#automatic-max-workers').value = String(savedMaxWorkers);
       syncActions();
     } catch (error) {
       setStatus(error.message, true);
@@ -138,6 +153,7 @@
       if (button) window.NiDiNavigation?.show(button.dataset.appView);
     });
     $('#automatic-delete-after').addEventListener('input', syncActions);
+    $('#automatic-max-workers').addEventListener('input', syncActions);
     $('#automatic-save-templates').addEventListener('click', () => void saveSettings());
     window.addEventListener('nidi:automatic-processing:show', () => void loadSettings());
     void loadSettings();

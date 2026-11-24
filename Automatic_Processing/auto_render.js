@@ -6,14 +6,21 @@ const fs = require('node:fs');
 const sharp = require('sharp');
 const { pipeline } = require('node:stream/promises');
 
-const configuredWorkers = Number(process.env.AUTO_RENDER_WORKERS);
-const MAX_RENDER_WORKERS = 20;
-const maxWorkers = Number.isInteger(configuredWorkers) && configuredWorkers > 0
-  ? Math.min(MAX_RENDER_WORKERS, configuredWorkers)
-  : MAX_RENDER_WORKERS;
+const MAX_RENDER_WORKERS = 100;
+const DEFAULT_RENDER_WORKERS = MAX_RENDER_WORKERS;
+let maxWorkers = DEFAULT_RENDER_WORKERS;
 const workerPath = path.join(__dirname, 'auto_render_worker.js');
 const queue = [];
 let activeWorkers = 0;
+
+function setMaxWorkers(value) {
+  if (!Number.isInteger(value) || value < 1 || value > MAX_RENDER_WORKERS) {
+    throw new RangeError(`Jumlah worker harus antara 1 dan ${MAX_RENDER_WORKERS}.`);
+  }
+  maxWorkers = value;
+  dispatch();
+  return maxWorkers;
+}
 
 function dispatch() {
   while (activeWorkers < maxWorkers && queue.length) {
@@ -64,4 +71,9 @@ function renderRawToFile(rawPath, outputPath, width, height, settings, format = 
   });
 }
 
-module.exports = { decodeToRawFile, renderRawToFile, maxWorkers };
+module.exports = {
+  decodeToRawFile,
+  renderRawToFile,
+  setMaxWorkers,
+  get maxWorkers() { return maxWorkers; },
+};

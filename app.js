@@ -17,6 +17,9 @@ const AUTO_SETTINGS_FILE = path.join(AUTO_DIR, 'template_settings.json');
 const MIN_DELETE_AFTER_MINUTES = 1;
 const MAX_DELETE_AFTER_MINUTES = 10080;
 const DEFAULT_DELETE_AFTER_MINUTES = 60;
+const MIN_MAX_WORKERS = 1;
+const MAX_MAX_WORKERS = 100;
+const DEFAULT_MAX_WORKERS = 100;
 const MAX_ACTIVE_AUTO_PHOTOS = 100;
 const automaticJobs = new Map();
 const automaticDeletionTimers = new Map();
@@ -24,7 +27,7 @@ fs.mkdirSync(TEMPLATE_DIR, { recursive: true });
 fs.mkdirSync(AUTO_INPUT_DIR, { recursive: true });
 fs.mkdirSync(AUTO_OUTPUT_DIR, { recursive: true });
 if (!fs.existsSync(AUTO_SETTINGS_FILE)) {
-  fs.writeFileSync(AUTO_SETTINGS_FILE, `${JSON.stringify({ schemaVersion: 1, updatedAt: null, deleteAfterMinutes: DEFAULT_DELETE_AFTER_MINUTES, selectedTemplates: [] }, null, 2)}\n`);
+  fs.writeFileSync(AUTO_SETTINGS_FILE, `${JSON.stringify({ schemaVersion: 1, updatedAt: null, deleteAfterMinutes: DEFAULT_DELETE_AFTER_MINUTES, maxWorkers: DEFAULT_MAX_WORKERS, selectedTemplates: [] }, null, 2)}\n`);
 }
 setInterval(() => {
   const now = Date.now();
@@ -164,16 +167,20 @@ async function readAutomaticTemplateSettings() {
   const savedDeleteAfter=Number(settings.deleteAfterMinutes);
   const deleteAfterMinutes=Number.isInteger(savedDeleteAfter)&&savedDeleteAfter>=MIN_DELETE_AFTER_MINUTES&&savedDeleteAfter<=MAX_DELETE_AFTER_MINUTES
     ?savedDeleteAfter:DEFAULT_DELETE_AFTER_MINUTES;
+  const savedMaxWorkers=Number(settings.maxWorkers);
+  const maxWorkers=Number.isInteger(savedMaxWorkers)&&savedMaxWorkers>=MIN_MAX_WORKERS&&savedMaxWorkers<=MAX_MAX_WORKERS
+    ?savedMaxWorkers:DEFAULT_MAX_WORKERS;
   return {
     schemaVersion:1,
     updatedAt:settings.updatedAt||null,
     deleteAfterMinutes,
+    maxWorkers,
     selectedTemplates:settings.selectedTemplates.filter(item=>item&&typeof item.name==='string'&&item.settings&&typeof item.settings==='object')
       .map(item=>({name:templateName(item.name),outputFormat:['jpg','jpeg'].includes(item.outputFormat)?'jpeg':'png',settings:cleanSettings(item.settings)})),
   };
 }
-async function writeAutomaticTemplateSettings(selectedTemplates,deleteAfterMinutes) {
-  const value={schemaVersion:1,updatedAt:new Date().toISOString(),deleteAfterMinutes,selectedTemplates};
+async function writeAutomaticTemplateSettings(selectedTemplates,deleteAfterMinutes,maxWorkers) {
+  const value={schemaVersion:1,updatedAt:new Date().toISOString(),deleteAfterMinutes,maxWorkers,selectedTemplates};
   const temporaryFile=path.join(AUTO_DIR,`template_settings.${randomUUID()}.tmp`);
   await fs.promises.writeFile(temporaryFile,`${JSON.stringify(value,null,2)}\n`,{flag:'wx'});
   await fs.promises.rename(temporaryFile,AUTO_SETTINGS_FILE);
@@ -459,8 +466,11 @@ async function api(req,res,url) {
     if(body.templateNames.length>20)return json(res,400,{error:'Maksimal 20 template dapat dipilih.'});
     const currentSettings=await readAutomaticTemplateSettings();
     const deleteAfterMinutes=body.deleteAfterMinutes===undefined?currentSettings.deleteAfterMinutes:Number(body.deleteAfterMinutes);
+    const maxWorkers=body.maxWorkers===undefined?currentSettings.maxWorkers:Number(body.maxWorkers);
     if(!Number.isInteger(deleteAfterMinutes)||deleteAfterMinutes<MIN_DELETE_AFTER_MINUTES||deleteAfterMinutes>MAX_DELETE_AFTER_MINUTES)
       return json(res,400,{error:`Delete After harus diatur antara ${MIN_DELETE_AFTER_MINUTES} dan ${MAX_DELETE_AFTER_MINUTES} menit.`});
+    if(!Number.isInteger(maxWorkers)||maxWorkers<MIN_MAX_WORKERS||maxWorkers>MAX_MAX_WORKERS)
+      return json(res,400,{error:`Max Parallel Workers harus diatur antara ${MIN_MAX_WORKERS} dan ${MAX_MAX_WORKERS}.`});
     const available=await listTemplates();
     const selected=[];const seen=new Set();
     for(const rawName of body.templateNames){
@@ -471,7 +481,8 @@ async function api(req,res,url) {
       seen.add(key);
       selected.push({name:template.name,outputFormat:template.outputFormat,settings:template.settings});
     }
-    const saved=await writeAutomaticTemplateSettings(selected,deleteAfterMinutes);
+    const saved=await writeAutomaticTemplateSettings(selected,deleteAfterMinutes,maxWorkers);
+    automaticRenderer.setMaxWorkers(maxWorkers);
     return json(res,200,saved);
   }
   if(req.method==='POST'&&url==='/api/automatic-processing/jobs'){
@@ -582,4 +593,8 @@ function staticFile(req,res,pathname){let decoded;try{decoded=decodeURIComponent
   fs.stat(file,(err,stat)=>{if(err||!stat.isFile()){res.writeHead(404);return res.end('Not found');}res.writeHead(200,{'Content-Type':mime[path.extname(file).toLowerCase()]||'application/octet-stream','Content-Length':stat.size,'Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'});if(req.method==='HEAD')return res.end();fs.createReadStream(file).pipe(res);});
 }
 const server=http.createServer((req,res)=>{const url=new URL(req.url,'http://localhost');if(url.pathname.startsWith('/api/')){api(req,res,url.pathname).catch(e=>{if(!res.headersSent&&!res.destroyed)json(res,e.status||500,{error:e.status?e.message:'Terjadi kesalahan di server.'});});return;}if(!['GET','HEAD'].includes(req.method)){res.writeHead(405);return res.end('Method not allowed');}staticFile(req,res,url.pathname);});
-void migrateLegacyTemplates().then(()=>server.listen(PORT,()=>console.log(`NiDi AutoColor berjalan di http://localhost:${PORT}`))).catch(error=>{console.error('Migrasi template gagal:',error.message);process.exitCode=1;});
+void migrateLegacyTemplates().then(async()=>{
+  const settings=await readAutomaticTemplateSettings();
+  automaticRenderer.setMaxWorkers(settings.maxWorkers);
+  server.listen(PORT,()=>console.log(`NiDi AutoColor berjalan di http://localhost:${PORT}`));
+}).catch(error=>{console.error('Inisialisasi server gagal:',error.message);process.exitCode=1;});

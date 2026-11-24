@@ -26,7 +26,7 @@
       <div>
         <p class="template-kicker">PENGATURAN / 02</p>
         <h2 id="automatic-delete-title">Delete After</h2>
-        <p>Timer dimulai setelah semua template untuk satu foto selesai diproses.</p>
+        <p>Timer dimulai setelah semua foto dalam satu kelompok selesai diproses.</p>
       </div>
     </div>
     <label class="automatic-delete-control" for="automatic-delete-after">
@@ -36,6 +36,24 @@
         <span>menit</span>
       </span>
     </label>
-    <p class="automatic-delete-hint">Berlaku per foto. Nilai 1–10.080 menit (maksimal 7 hari); file sementara di folder input dan output akan dihapus otomatis oleh server.</p>
+    <p class="automatic-delete-hint">Berlaku per kelompok foto. Nilai 1–10.080 menit (maksimal 7 hari); semua file input dan hasil dalam kelompok akan dihapus otomatis oleh server.</p>
+  </section>
+
+  <section class="automatic-processing-section" aria-labelledby="automatic-workers-title">
+    <div class="automatic-processing-section-heading">
+      <div>
+        <p class="template-kicker">PENGATURAN / 03</p>
+        <h2 id="automatic-workers-title">Max Parallel Workers</h2>
+        <p>Batas jumlah render foto-template yang boleh berjalan bersamaan di server.</p>
+      </div>
+    </div>
+    <label class="automatic-delete-control" for="automatic-max-workers">
+      <span>Render paralel maksimum</span>
+      <span class="automatic-delete-input-wrap">
+        <input id="automatic-max-workers" type="number" min="1" max="100" step="1" value="100" inputmode="numeric">
+        <span>workers</span>
+      </span>
+    </label>
+    <p class="automatic-delete-hint">Nilai 1–100; default 100. Pilih batas yang sesuai dengan kapasitas CPU dan memori server. Perubahan berlaku langsung pada antrean render.</p>
   </section>
 </section>

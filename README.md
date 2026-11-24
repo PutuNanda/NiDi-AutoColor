@@ -36,7 +36,7 @@ Tab Automatic Processing hanya mengatur template dan `Delete After`; upload, sta
 API pilihan template memakai `GET` dan `POST /api/automatic-processing/templates`. Contoh body untuk menyimpan pengaturan:
 
 ```json
-{"templateNames":["hehe"],"deleteAfterMinutes":60}
+{"templateNames":["hehe"],"deleteAfterMinutes":60,"maxWorkers":100}
 ```
 
-Dokumentasi endpoint eksternal, format nama hasil, dan contoh script tersedia di [External_API.md](External_API.md). Satu `jobId` dapat menampung beberapa foto; setiap foto menghasilkan satu file untuk setiap template terpilih. Maksimal 20 worker render berjalan bersamaan secara default. Jumlahnya dapat diatur lewat `AUTO_RENDER_WORKERS` dari 1 hingga 20.
+Dokumentasi endpoint eksternal, format nama hasil, dan contoh script tersedia di [External_API.md](External_API.md). Satu `jobId` dapat menampung beberapa foto; setiap foto menghasilkan satu file untuk setiap template terpilih. `Max Parallel Workers` mengatur jumlah render yang dapat berjalan bersamaan di server: default 100, dapat diatur dari 1 hingga 100 pada halaman Automatic Processing.

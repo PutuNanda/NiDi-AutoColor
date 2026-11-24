@@ -2,7 +2,7 @@
 
 Base URL default: `http://127.0.0.1:3000`. Dokumen ini membahas workflow batch Automatic Processing untuk script eksternal. Endpoint upload, status, dan unduh di bawah tidak dipanggil oleh UI web.
 
-Sebelum membuat proses, pilih dan simpan template di tab **Automatic Processing**. Server mengambil snapshot template dan `Delete After` saat foto pertama diunggah. Semua foto yang dikirim menggunakan ID tersebut akan memakai pilihan template yang sama.
+Sebelum membuat proses, pilih dan simpan template, `Delete After`, dan `Max Parallel Workers` di tab **Automatic Processing**. Server mengambil snapshot template dan `Delete After` saat foto pertama diunggah. Batas worker berlaku global untuk antrean render di server.
 
 ## Alur API
 
@@ -59,7 +59,7 @@ Respons `202 Accepted` mengembalikan `photoId`. Server mulai memproses foto deng
 GET /api/automatic-processing/jobs/7d1fc786-e255-4e7c-a711-3fcbfdb0823d/status
 ```
 
-Status kelompok dapat berupa `uploading`, `queued`, `processing`, `done`, `partial`, atau `error`. Di dalam `photos`, tiap foto dan tiap hasil template memiliki statusnya sendiri: `queued`, `processing`, `done`, atau `error` (foto juga dapat berstatus `partial`). `completed` dan `total` menghitung hasil template yang selesai dibanding seluruh hasil yang diterima server.
+Status kelompok dapat berupa `uploading`, `queued`, `processing`, `done`, `partial`, atau `error`. Di dalam `photos`, tiap foto dan tiap hasil template memiliki statusnya sendiri: `queued`, `processing`, `done`, atau `error` (foto juga dapat berstatus `partial`). `completed` dan `total` menghitung hasil template yang selesai dibanding seluruh hasil yang diterima server. `parallelWorkers` menunjukkan batas worker global yang sedang aktif.
 
 `done`, `partial`, dan `error` berarti semua foto yang sudah diunggah hingga saat itu telah selesai diproses. Kelompok masih dapat menerima foto tambahan selama belum kedaluwarsa; mengunggah foto tambahan akan memulai kembali penghitung waktu penghapusan setelah foto-foto terbaru selesai.
 
@@ -142,4 +142,4 @@ if job["completed"]:
     Path(f"NiDi_AutoColor_{job_id}.zip").write_bytes(response.content)
 ```
 
-Retensi hasil mengikuti `Delete After` yang tersimpan di tab Automatic Processing (default 60 menit, rentang 1–10.080 menit). Waktu retensi dimulai setelah semua foto yang sudah diunggah selesai diproses. Download hasil sebelum `expiresAt`; setelah kedaluwarsa, ID proses mengembalikan `404` dan file input serta hasilnya dihapus. Render memakai hingga 20 worker secara default; atur `AUTO_RENDER_WORKERS` dari 1 sampai 20 untuk mengubah jumlahnya.
+Retensi hasil mengikuti `Delete After` yang tersimpan di tab Automatic Processing (default 60 menit, rentang 1–10.080 menit). Waktu retensi dimulai setelah semua foto yang sudah diunggah selesai diproses. Download hasil sebelum `expiresAt`; setelah kedaluwarsa, ID proses mengembalikan `404` dan file input serta hasilnya dihapus. `Max Parallel Workers` default-nya 100 dan dapat diatur dari 1 hingga 100 pada halaman Automatic Processing. Jika nilainya diturunkan, worker yang sudah berjalan akan selesai dahulu sebelum antrean mengikuti batas baru.

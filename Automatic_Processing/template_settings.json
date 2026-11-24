@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "updatedAt": "2026-11-24T06:00:52.929Z",
   "deleteAfterMinutes": 60,
+  "maxWorkers": 100,
   "selectedTemplates": [
     {
       "name": "filter negatif",
