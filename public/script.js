@@ -47,6 +47,7 @@
   let state = freshState();
   let imageId = '';
   let currentFileName = '';
+  let currentImageFile = null;
   let previewUrl = '';
   let originalPreviewUrl = '';
   let previewTimer = 0;
@@ -73,6 +74,15 @@
   let maskEditing = false;
   let maskErasing = false;
   let maskPointerId = -1;
+  let sessionRestorePromise = null;
+  let sessionRestoring = true;
+  let sessionDbPromise = null;
+  let sessionSaveQueued = false;
+  let sessionWriteActive = false;
+  let pendingSessionRecord = null;
+  let pendingPhotoUpdate = null;
+  let sessionSaveWarningShown = false;
+  let sessionSaveNoticeShown = false;
 
   const fileInput = $('#file-input');
   const importButton = $('#import-button');
@@ -95,6 +105,122 @@
   const wheelEditorClose = $('#wheel-editor-close');
   const expandedColorWheel = $('#expanded-color-wheel');
   let wheelEditorOpener = null;
+  const SESSION_CACHE_DB = 'nidi-autocolor-editor-cache';
+  const SESSION_CACHE_STORE = 'sessions';
+  const SESSION_CACHE_KEY = 'active-state';
+  const SESSION_CACHE_PHOTO_KEY = 'active-photo';
+  const LEGACY_SESSION_CACHE_KEY = 'active-editor';
+  const SESSION_CACHE_TTL = 24 * 60 * 60 * 1000;
+
+  function openSessionCache() {
+    if (sessionDbPromise) return sessionDbPromise;
+    sessionDbPromise = new Promise((resolve, reject) => {
+      if (!window.indexedDB) { reject(new Error('Browser storage is unavailable.')); return; }
+      const request = window.indexedDB.open(SESSION_CACHE_DB, 1);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(SESSION_CACHE_STORE)) db.createObjectStore(SESSION_CACHE_STORE);
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('Could not open browser storage.'));
+    });
+    return sessionDbPromise;
+  }
+  async function readSessionCache() {
+    const db = await openSessionCache();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(SESSION_CACHE_STORE, 'readonly');
+      const store = transaction.objectStore(SESSION_CACHE_STORE);
+      let stateRecord = null, photoRecord = null, legacyRecord = null;
+      store.get(SESSION_CACHE_KEY).onsuccess = event => { stateRecord = event.target.result || null; };
+      store.get(SESSION_CACHE_PHOTO_KEY).onsuccess = event => { photoRecord = event.target.result || null; };
+      store.get(LEGACY_SESSION_CACHE_KEY).onsuccess = event => { legacyRecord = event.target.result || null; };
+      transaction.oncomplete = () => {
+        if (stateRecord) resolve({
+          ...stateRecord,
+          imageBlob: photoRecord?.imageBlob || null,
+          fileName: photoRecord?.fileName || stateRecord.fileName || '',
+        });
+        else if (legacyRecord) resolve({ ...legacyRecord, legacy: true });
+        else resolve(null);
+      };
+      transaction.onerror = () => reject(transaction.error || new Error('Could not read browser storage.'));
+      transaction.onabort = () => reject(transaction.error || new Error('Browser storage read was interrupted.'));
+    });
+  }
+  async function writeSessionCache(record, photoFile = null) {
+    const db = await openSessionCache();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(SESSION_CACHE_STORE, 'readwrite');
+      const store = transaction.objectStore(SESSION_CACHE_STORE);
+      store.put(record, SESSION_CACHE_KEY);
+      if (photoFile) store.put({ imageBlob: photoFile, fileName: record.fileName }, SESSION_CACHE_PHOTO_KEY);
+      else if (!record.hasImage) store.delete(SESSION_CACHE_PHOTO_KEY);
+      store.delete(LEGACY_SESSION_CACHE_KEY);
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error || new Error('Could not save browser storage.'));
+      transaction.onabort = () => reject(transaction.error || new Error('Browser storage save was interrupted.'));
+    });
+  }
+  async function deleteSessionCache() {
+    const db = await openSessionCache();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(SESSION_CACHE_STORE, 'readwrite');
+      const store = transaction.objectStore(SESSION_CACHE_STORE);
+      store.delete(SESSION_CACHE_KEY); store.delete(SESSION_CACHE_PHOTO_KEY); store.delete(LEGACY_SESSION_CACHE_KEY);
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error || new Error('Could not clear browser storage.'));
+    });
+  }
+  function buildSessionRecord() {
+    return {
+      updatedAt: Date.now(), expiresAt: Date.now() + SESSION_CACHE_TTL,
+      fileName: currentFileName, hasImage: Boolean(currentImageFile),
+      settings: structuredClone(state), outputFormat: exportFormat.value,
+      pendingTemplate, zoomLevel, panX, panY,
+    };
+  }
+  function scheduleSessionSave(photoFile = null) {
+    if (!currentImageFile && !pendingTemplate) return;
+    pendingSessionRecord = buildSessionRecord();
+    if (photoFile) pendingPhotoUpdate = photoFile;
+    if (sessionSaveQueued) return;
+    sessionSaveQueued = true;
+    queueMicrotask(() => {
+      sessionSaveQueued = false;
+      void drainSessionWrites();
+    });
+  }
+  async function drainSessionWrites() {
+    if (sessionWriteActive) return;
+    sessionWriteActive = true;
+    try {
+      while (pendingSessionRecord) {
+        const record = pendingSessionRecord, photo = pendingPhotoUpdate;
+        pendingSessionRecord = null; pendingPhotoUpdate = null;
+        await writeSessionCache(record, photo);
+        if (!sessionSaveNoticeShown) {
+          sessionSaveNoticeShown = true;
+          showToast('Editing session saved in this browser for 24 hours.');
+        }
+      }
+    } catch (error) {
+      if (!sessionSaveWarningShown) {
+        sessionSaveWarningShown = true;
+        console.warn('Editing session could not be saved in browser storage:', error.message);
+        showToast('This browser could not save your editing session.');
+      }
+    } finally {
+      sessionWriteActive = false;
+      if (pendingSessionRecord && !sessionSaveQueued) {
+        sessionSaveQueued = true;
+        queueMicrotask(() => { sessionSaveQueued = false; void drainSessionWrites(); });
+      }
+    }
+  }
+  function flushSessionSave() {
+    scheduleSessionSave();
+  }
 
   function currentMask() {
     if (!state.mask || typeof state.mask !== 'object') state.mask = { strokes: [], inverted: false, brushSize: 72 };
@@ -550,8 +676,10 @@
     maskOverlay.style.transformOrigin = '50% 50%';
     maskOverlay.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
     drawMaskOverlay();
+    scheduleSessionSave();
   }
   function queuePreview() {
+    scheduleSessionSave();
     if (!imageId || isComparing) return;
     if (isExporting) { previewQueued = true; return; }
     if (previewFrame || previewTimer) return;
@@ -599,6 +727,7 @@
   }
   async function importFile(file) {
     if (!file) return;
+    if (sessionRestoring && sessionRestorePromise) await sessionRestorePromise;
     if (!window.NiDiRender.supports(file)) return showToast('Pilih file foto atau gambar yang didukung.');
     const activeImport = ++importNumber;
     importButton.disabled = true; setStatus('Membuka foto di perangkat…', true);
@@ -610,6 +739,7 @@
       renderNumber++;
       if (previewUrl) URL.revokeObjectURL(previewUrl); if (originalPreviewUrl) URL.revokeObjectURL(originalPreviewUrl);
       previewUrl = ''; originalPreviewUrl = ''; imageId = `local-${activeImport}`; currentFileName = file.name;
+      currentImageFile = file;
       state = pendingTemplate ? state : freshState(); pendingTemplate = false; isComparing = false;
       compareButton.classList.remove('is-active');
       photoWidth = result.width; photoHeight = result.height; setZoom(1); fitCanvasToViewport(); zoomIndicator.hidden = false;
@@ -620,11 +750,70 @@
       exportButton.disabled = false; compareButton.disabled = false; $('#reset-view-button').disabled = false; $('#reset-button').disabled = false;
       buildControls(); setStatus('Foto dibuka di perangkat');
       maskEditing = false; maskErasing = false; updateMaskControls();
+      scheduleSessionSave(file);
       queuePreview(0);
     } catch (error) {
       if (activeImport === importNumber) { setStatus('Impor gagal'); showToast(error.message); }
     } finally {
       if (activeImport === importNumber) { importButton.disabled = false; fileInput.value = ''; }
+    }
+  }
+  async function restoreEditingSession() {
+    const emptyImportButton = $('#empty-import');
+    importButton.disabled = true; emptyImportButton.disabled = true;
+    setStatus('Checking for a saved editing session…', true);
+    try {
+      const record = await readSessionCache();
+      if (!record) { setStatus('Siap mengedit'); return false; }
+      if (!record.expiresAt || record.expiresAt <= Date.now()) {
+        await deleteSessionCache();
+        setStatus('Siap mengedit');
+        return false;
+      }
+      state = cloneTemplateState(record.settings);
+      pendingTemplate = Boolean(record.pendingTemplate);
+      if (['png', 'jpg', 'jpeg'].includes(record.outputFormat)) exportFormat.value = record.outputFormat;
+      if (record.imageBlob) {
+        const name = String(record.fileName || 'restored-photo').slice(0, 200);
+        const file = new File([record.imageBlob], name, { type: record.imageBlob.type || 'application/octet-stream' });
+        const result = await renderer.load(file);
+        currentImageFile = file; currentFileName = name; imageId = `local-restored-${Date.now()}`;
+        photoWidth = result.width; photoHeight = result.height;
+        emptyState.hidden = true; preview.removeAttribute('src'); preview.hidden = true;
+        previewLoading.hidden = true; exportButton.disabled = false; compareButton.disabled = false;
+        $('#reset-view-button').disabled = false; $('#reset-button').disabled = false;
+        $('#photo-name').textContent = name;
+        $('#photo-dimensions').textContent = `${result.width.toLocaleString('id-ID')} × ${result.height.toLocaleString('id-ID')}`;
+        setZoom(1); fitCanvasToViewport();
+        setZoom(Math.max(.25, Math.min(5, Number(record.zoomLevel) || 1)));
+        const bounds = dropZone.getBoundingClientRect();
+        panX = Number.isFinite(record.panX) ? record.panX : 0;
+        panY = Number.isFinite(record.panY) ? record.panY : 0;
+        panX = Math.max(-Math.max(48, bounds.width * (zoomLevel - 1) / 2), Math.min(Math.max(48, bounds.width * (zoomLevel - 1) / 2), panX));
+        panY = Math.max(-Math.max(48, bounds.height * (zoomLevel - 1) / 2), Math.min(Math.max(48, bounds.height * (zoomLevel - 1) / 2), panY));
+        updatePreviewTransform(); buildControls(); updateMaskControls();
+        setStatus('Editing session restored');
+        queuePreview();
+        sessionSaveNoticeShown = true;
+        showToast('Previous editing session restored.');
+      } else if (pendingTemplate) {
+        buildControls(); updateMaskControls();
+        setStatus('Saved template settings restored. Import a photo to continue.');
+        sessionSaveNoticeShown = true;
+        showToast('Saved template settings restored.');
+      } else {
+        await deleteSessionCache();
+        return false;
+      }
+      scheduleSessionSave(record.legacy ? currentImageFile : null);
+      return true;
+    } catch (error) {
+      console.warn('Saved editing session could not be restored:', error.message);
+      setStatus('Could not restore the saved editing session.', true);
+      return false;
+    } finally {
+      sessionRestoring = false;
+      importButton.disabled = false; emptyImportButton.disabled = false;
     }
   }
   async function exportImage() {
@@ -656,6 +845,15 @@
     }
   }
   function resetEdits() { state = freshState(); pendingTemplate = false; maskEditing = false; maskErasing = false; buildControls(); updateMaskControls(); queuePreview(); }
+  function openResetConfirm() {
+    const modal = $('#reset-confirm-modal');
+    modal.hidden = false;
+    requestAnimationFrame(() => $('#reset-confirm-cancel').focus());
+  }
+  function closeResetConfirm() {
+    $('#reset-confirm-modal').hidden = true;
+    $('#reset-button').focus({ preventScroll: true });
+  }
   function toggleCompare(active) {
     if (!imageId || isComparing === active) return;
     isComparing = active; compareButton.classList.toggle('is-active', active);
@@ -696,7 +894,13 @@
   $('#empty-import').addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', () => importFile(fileInput.files[0]));
   exportButton.addEventListener('click', exportImage);
-  $('#reset-button').addEventListener('click', resetEdits);
+  $('#reset-button').addEventListener('click', openResetConfirm);
+  $('#reset-confirm-cancel').addEventListener('click', closeResetConfirm);
+  $('#reset-confirm-accept').addEventListener('click', () => { closeResetConfirm(); resetEdits(); });
+  $('#reset-confirm-modal').addEventListener('click', event => {
+    if (event.target === event.currentTarget) closeResetConfirm();
+  });
+  exportFormat.addEventListener('change', scheduleSessionSave);
   $('#reset-view-button').addEventListener('click', resetCanvasView);
   $('#reset-curve').addEventListener('click', () => { state.curves[selectedCurveChannel] = [{ x: 0, y: 0 }, { x: 1, y: 1 }]; updateCurve(); queuePreview(); });
   compareButton.addEventListener('pointerdown', event => { event.preventDefault(); toggleCompare(true); });
@@ -708,6 +912,7 @@
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape') return;
     closeWheelEditor(); toggleCompare(false);
+    if (!$('#reset-confirm-modal').hidden) closeResetConfirm();
   });
   window.addEventListener('resize', () => {
     if (wheelEditorLayer.hidden) return;
@@ -795,6 +1000,7 @@
     const size = Number(event.currentTarget.value);
     currentMask().brushSize = size;
     $('#mask-brush-value').value = `${size} px`;
+    scheduleSessionSave();
   });
   $('#mask-undo').addEventListener('click', () => {
     currentMask().strokes.pop();
@@ -809,6 +1015,7 @@
   document.addEventListener('dragover', event => event.preventDefault());
   document.addEventListener('drop', event => event.preventDefault());
   window.addEventListener('beforeunload', () => {
+    flushSessionSave();
     renderer.destroy();
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     if (originalPreviewUrl) URL.revokeObjectURL(originalPreviewUrl);
@@ -846,10 +1053,14 @@
       updateMaskControls();
       if (imageId) { setStatus(`Template applied: ${name}`); queuePreview(); }
       else setStatus(`Template loaded: ${name}. Import a photo to apply it.`);
+      scheduleSessionSave();
       showToast(`Template “${name}” applied.`);
     },
   };
 
   buildControls();
   updateMaskControls();
+  sessionRestorePromise = restoreEditingSession();
+  document.addEventListener('visibilitychange', () => { if (document.hidden) flushSessionSave(); });
+  window.addEventListener('pagehide', flushSessionSave);
 })();

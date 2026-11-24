@@ -15,6 +15,8 @@ Editor foto sederhana dengan pengeditan manual langsung di browser dan alur batc
 - Koreksi suhu warna, tint, kontras, kecerahan, exposure, highlights, shadows, whites, blacks, saturation, hue, texture, clarity, dan vignette.
 - Penyesuaian HSL untuk delapan rentang warna, kurva tonal yang dapat ditarik, dan roda warna shadows/midtones/highlights.
 - Mask brush membatasi semua penyesuaian pada area yang dicat, dengan penghapus, undo, clear, dan invert. Mask ikut disimpan di template dan dipakai Automatic Processing.
+- Sesi editor terakhir (foto asli, pengaturan, format ekspor, dan posisi tampilan) disimpan lokal di browser melalui IndexedDB selama 24 jam dan dipulihkan setelah halaman dibuka ulang.
+- Sesi editor terakhir (foto asli, pengaturan, format ekspor, dan posisi tampilan) disimpan lokal di browser melalui IndexedDB selama 24 jam dan dipulihkan setelah halaman dibuka ulang.
 - Pratinjau diperbarui langsung saat kontrol digeser, dengan render di background worker agar antarmuka tetap responsif.
 - Ekspor berjalan di perangkat pada resolusi asli sebagai PNG lossless atau JPEG kualitas maksimum. Menu menyediakan pilihan nama berkas `.jpeg` dan `.jpg`; keduanya memakai encoding JPEG yang sama. JPEG tetap lossy dan memakai latar putih untuk area transparan. File hasil ekspor dipakai sebagai pratinjau final.
 - Automatic Processing menerima banyak foto, menerapkan beberapa template tersimpan, dan memproses tiap kombinasi foto-template secara paralel di server. Hasil dapat diunduh satu per satu.

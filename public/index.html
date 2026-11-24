@@ -57,7 +57,7 @@
         <footer class="workspace-footer"><span><span class="local-render">&#9670;</span> Foto diproses di perangkat</span><span>PRATINJAU LOKAL</span></footer>
       </section>
       <aside class="edit-panel" aria-label="Panel pengeditan">
-        <div class="panel-heading"><div><p class="section-kicker">WORKSPACE / 01</p><h2>Color studio</h2></div><button id="reset-button" type="button" class="reset-button" disabled>↺ <span>Atur ulang</span></button></div>
+        <div class="panel-heading"><div><p class="section-kicker">WORKSPACE / 01</p><h2>Color studio</h2></div><button id="reset-button" type="button" class="reset-button" disabled>↺ <span>Reset</span></button></div>
         <div class="tab-list" role="tablist" aria-label="Kategori edit">
           <button class="tab-button is-active" id="tab-basic" role="tab" aria-selected="true" aria-controls="panel-basic" data-tab="basic">Dasar</button>
           <button class="tab-button" id="tab-hsl" role="tab" aria-selected="false" aria-controls="panel-hsl" data-tab="hsl">HSL</button>
@@ -114,6 +114,17 @@
     <div id="automatic-processing-view-root"></div>
     <div id="template-modal-root"></div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="reset-confirm-modal" class="modal-backdrop" hidden>
+      <section class="app-modal" role="alertdialog" aria-modal="true" aria-labelledby="reset-confirm-title" aria-describedby="reset-confirm-description">
+        <p class="modal-kicker">RESET EDITING</p>
+        <h2 id="reset-confirm-title">Reset all edits?</h2>
+        <p id="reset-confirm-description" class="modal-description">This will clear all color adjustments and masks for this photo. The original photo will remain open.</p>
+        <div class="modal-actions">
+          <button id="reset-confirm-cancel" class="button button-quiet" type="button">Cancel</button>
+          <button id="reset-confirm-accept" class="button button-danger" type="button">Reset</button>
+        </div>
+      </section>
+    </div>
   </div>
 </body>
 </html>
