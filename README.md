@@ -19,7 +19,7 @@ Editor foto sederhana dengan pengeditan manual langsung di browser dan alur batc
 - Sesi editor terakhir (foto asli, pengaturan, format ekspor, dan posisi tampilan) disimpan lokal di browser melalui IndexedDB selama 24 jam dan dipulihkan setelah halaman dibuka ulang.
 - Pratinjau diperbarui langsung saat kontrol digeser, dengan render di background worker agar antarmuka tetap responsif.
 - Ekspor berjalan di perangkat pada resolusi asli sebagai PNG lossless atau JPEG kualitas maksimum. Menu menyediakan pilihan nama berkas `.jpeg` dan `.jpg`; keduanya memakai encoding JPEG yang sama. JPEG tetap lossy dan memakai latar putih untuk area transparan. File hasil ekspor dipakai sebagai pratinjau final.
-- Automatic Processing menerima banyak foto, menerapkan beberapa template tersimpan, dan memproses tiap kombinasi foto-template secara paralel di server. Hasil dapat diunduh satu per satu.
+- Automatic Processing menerima beberapa foto dalam satu kelompok API eksternal, menerapkan template tersimpan, dan mengemas hasil yang selesai ke dalam ZIP.
 
 Browser harus mendukung `createImageBitmap`, Web Workers, dan `OffscreenCanvas` untuk pemrosesan lokal. Ekspor dibuat ulang dari foto asli pada resolusi penuh; PNG tidak memakai kompresi lossy. Pipeline Canvas memproses warna 8 bit per kanal; sumber 16 bit/HDR, profil warna khusus, serta metadata kamera tidak dipertahankan persis oleh browser.
 
@@ -31,7 +31,7 @@ Pengaturan HSL, warna, cahaya, kurva, efek, roda warna, mask, dan format ekspor 
 
 ## Automatic Processing
 
-Tab Automatic Processing hanya mengatur template dan `Delete After`; upload, status, dan unduh hasil dilakukan lewat API. Pengaturan disimpan di `Automatic_Processing/template_settings.json`. `Delete After` berlaku per foto dan mulai dihitung setelah semua template selesai. Server menghapus file input dan semua hasil saat timer habis. Nilainya 1–10.080 menit; default 60 menit.
+Tab Automatic Processing hanya mengatur template dan `Delete After`; upload, status, dan unduh hasil dilakukan lewat API. Pengaturan disimpan di `Automatic_Processing/template_settings.json`. Pilihan template dan waktu retensi disalin ketika foto pertama dikirim untuk membuat kelompok API. `Delete After` mulai dihitung setelah semua foto yang saat itu sudah diunggah selesai; upload foto tambahan akan memulai kembali timer saat pemrosesan kelompok selesai. Server menghapus file input dan hasil saat timer habis. Nilainya 1–10.080 menit; default 60 menit.
 
 API pilihan template memakai `GET` dan `POST /api/automatic-processing/templates`. Contoh body untuk menyimpan pengaturan:
 
@@ -39,6 +39,4 @@ API pilihan template memakai `GET` dan `POST /api/automatic-processing/templates
 {"templateNames":["hehe"],"deleteAfterMinutes":60}
 ```
 
-Upload satu gambar mentah per permintaan ke `POST /api/automatic-processing/jobs` dengan `Content-Type: image/jpeg` (sesuaikan format) dan header `X-File-Name` yang di-URL-encode. Respons `202` berisi `jobId`; `GET /api/automatic-processing/jobs/:jobId` memberi status dan URL unduhan. Daftar proses tersedia di `GET /api/automatic-processing/jobs`. Tiap hasil diunduh lewat URL `/api/automatic-processing/jobs/:jobId/outputs/:outputId`.
-
-Renderer server memakai algoritme koreksi dan pemrosesan tile yang sama dengan editor browser. Satu foto menghasilkan satu file untuk setiap template terpilih, dan tiap hasil dirender secara paralel. Upload tidak memiliki batas ukuran atau jumlah piksel buatan aplikasi; kapasitas disk dan perangkat tetap berlaku. Maksimal 20 worker render berjalan bersamaan secara default. Jumlahnya dapat diatur lewat `AUTO_RENDER_WORKERS` dari 1 hingga 20.
+Dokumentasi endpoint eksternal, format nama hasil, dan contoh script tersedia di [External_API.md](External_API.md). Satu `jobId` dapat menampung beberapa foto; setiap foto menghasilkan satu file untuk setiap template terpilih. Maksimal 20 worker render berjalan bersamaan secara default. Jumlahnya dapat diatur lewat `AUTO_RENDER_WORKERS` dari 1 hingga 20.

@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "name": "Negatif Edit",
+  "createdAt": "2026-11-24T06:00:48.471Z",
+  "outputFormat": "png",
+  "settings": {
+    "temperature": 16.44,
+    "tint": -2.74,
+    "hue": 180,
+    "contrast": 34.25,
+    "brightness": 0,
+    "exposure": 16.44,
+    "highlights": -47.95,
+    "shadows": 30.14,
+    "whites": 0,
+    "blacks": 100,
+    "texture": 0,
+    "clarity": 0,
+    "saturation": 0,
+    "vignette": 0,
+    "vignetteMidpoint": 45,
+    "vignetteRoundness": 0,
+    "vignetteFeather": 70,
+    "curves": {
+      "master": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 1,
+          "y": 1
+        }
+      ],
+      "red": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 1,
+          "y": 1
+        }
+      ],
+      "green": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 1,
+          "y": 1
+        }
+      ],
+      "blue": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 1,
+          "y": 1
+        }
+      ]
+    },
+    "hsl": {
+      "red": {
+        "h": 0,
+        "s": 0,
+        "l": 0
+      },
+      "orange": {
+        "h": 0,
+        "s": 0,
+        "l": 0
+      },
+      "yellow": {
+        "h": 0,
+        "s": 0,
+        "l": 0
+      },
+      "green": {
+        "h": 0,
+        "s": 0,
+        "l": 0
+      },
+      "aqua": {
+        "h": 0,
+        "s": 0,
+        "l": 0
+      },
+      "blue": {
+        "h": 0,
+        "s": 0,
+        "l": 0
+      },
+      "purple": {
+        "h": 0,
+        "s": 0,
+        "l": 0
+      },
+      "magenta": {
+        "h": 0,
+        "s": 0,
+        "l": 0
+      }
+    },
+    "wheels": {
+      "shadows": {
+        "hue": 0,
+        "amount": 0,
+        "luminance": 0
+      },
+      "midtones": {
+        "hue": 0,
+        "amount": 0,
+        "luminance": 0
+      },
+      "highlights": {
+        "hue": 0,
+        "amount": 0,
+        "luminance": 0
+      }
+    },
+    "mask": {
+      "strokes": [],
+      "inverted": false,
+      "brushSize": 72
+    }
+  }
+}

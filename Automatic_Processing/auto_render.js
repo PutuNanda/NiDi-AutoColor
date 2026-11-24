@@ -20,6 +20,7 @@ function dispatch() {
     const task = queue.shift();
     const worker = new Worker(workerPath);
     activeWorkers++;
+    task.onStatus?.('processing');
     let settled = false;
     const finish = async (error, result) => {
       if (settled) return;
@@ -55,9 +56,10 @@ async function decodeToRawFile(inputPath, rawPath) {
   return info;
 }
 
-function renderRawToFile(rawPath, outputPath, width, height, settings, format = 'png') {
+function renderRawToFile(rawPath, outputPath, width, height, settings, format = 'png', onStatus) {
   return new Promise((resolve, reject) => {
-    queue.push({ payload: { rawPath, outputPath, width, height, settings, format }, resolve, reject });
+    queue.push({ payload: { rawPath, outputPath, width, height, settings, format }, resolve, reject, onStatus });
+    onStatus?.('queued');
     dispatch();
   });
 }
