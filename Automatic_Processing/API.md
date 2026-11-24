@@ -8,6 +8,8 @@ The Automatic Processing page configures selected templates and `deleteAfterMinu
 
 `GET /api/templates` lists saved templates stored as `.nd` files containing JSON data. Save the selected names and retention duration with:
 
+Templates may include a normalized brush mask. Automatic Processing applies that mask with the selected template, so the mask follows the same relative position on each input photo.
+
 ```http
 POST /api/automatic-processing/templates
 Content-Type: application/json

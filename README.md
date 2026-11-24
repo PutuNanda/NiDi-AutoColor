@@ -14,6 +14,7 @@ Editor foto sederhana dengan pengeditan manual langsung di browser dan alur batc
 - Impor gambar umum yang didukung browser, TIFF melalui decoder lokal UTIF, serta banyak format kamera RAW melalui decoder lokal FlashRaw: CR2/CR3, NEF/NRW, ARW, RAF, RW2, ORF, DNG, IIQ, 3FR/FFF, X3F, GPR, dan lainnya. Batas gambar yang dirender saat ini 160 megapiksel (batas praktis bergantung pada memori perangkat).
 - Koreksi suhu warna, tint, kontras, kecerahan, exposure, highlights, shadows, whites, blacks, saturation, hue, texture, clarity, dan vignette.
 - Penyesuaian HSL untuk delapan rentang warna, kurva tonal yang dapat ditarik, dan roda warna shadows/midtones/highlights.
+- Mask brush membatasi semua penyesuaian pada area yang dicat, dengan penghapus, undo, clear, dan invert. Mask ikut disimpan di template dan dipakai Automatic Processing.
 - Pratinjau diperbarui langsung saat kontrol digeser, dengan render di background worker agar antarmuka tetap responsif.
 - Ekspor berjalan di perangkat pada resolusi asli sebagai PNG lossless atau JPEG kualitas maksimum. Menu menyediakan pilihan nama berkas `.jpeg` dan `.jpg`; keduanya memakai encoding JPEG yang sama. JPEG tetap lossy dan memakai latar putih untuk area transparan. File hasil ekspor dipakai sebagai pratinjau final.
 - Automatic Processing menerima banyak foto, menerapkan beberapa template tersimpan, dan memproses tiap kombinasi foto-template secara paralel di server. Hasil dapat diunduh satu per satu.
@@ -24,7 +25,7 @@ Jalankan `npm run build:formats` setelah memasang dependensi untuk membangun dec
 
 ## Template
 
-Pengaturan HSL, warna, cahaya, kurva, efek, roda warna, dan format ekspor disimpan sebagai file `.nd` berisi JSON di folder `Template` pada root proyek. File ini hanya berisi konfigurasi, tidak menyimpan foto. Dari Template Library, setiap template dapat diunduh atau diimpor sebagai `.nd`; `Download All Template` membuat satu file `.nd` gabungan yang juga dapat diimpor kembali. Nama template menerima huruf ASCII, angka, spasi, underscore, dan tanda hubung hingga 64 karakter. Template `.json` lama yang valid dipindahkan ke `.nd` saat server mulai. Template yang diterapkan tidak mengubah file template asal; simpan perubahan sebagai template baru.
+Pengaturan HSL, warna, cahaya, kurva, efek, roda warna, mask, dan format ekspor disimpan sebagai file `.nd` berisi JSON di folder `Template` pada root proyek. Mask menyimpan posisi sapuan secara relatif terhadap foto, sehingga template batch paling sesuai untuk foto dengan framing serupa. File ini hanya berisi konfigurasi, tidak menyimpan foto. Dari Template Library, setiap template dapat diunduh atau diimpor sebagai `.nd`; `Download All Template` membuat satu file `.nd` gabungan yang juga dapat diimpor kembali. Nama template menerima huruf ASCII, angka, spasi, underscore, dan tanda hubung hingga 64 karakter. Template `.json` lama yang valid dipindahkan ke `.nd` saat server mulai. Template yang diterapkan tidak mengubah file template asal; simpan perubahan sebagai template baru.
 
 ## Automatic Processing
 

@@ -4,6 +4,7 @@ const { parentPort } = require('node:worker_threads');
 const fs = require('node:fs');
 const { pipeline } = require('node:stream/promises');
 const sharp = require('sharp');
+const { cleanMask, buildMaskRaster, applyMask } = require('./masking');
 
 const bands = ['red', 'orange', 'yellow', 'green', 'aqua', 'blue', 'purple', 'magenta'];
 const bandHue = [0, 30, 60, 120, 180, 220, 275, 325];
@@ -48,6 +49,7 @@ function cleanSettings(input = {}) {
     amount: clamp(input.wheels?.[key]?.amount, 0, 1),
     luminance: clamp(input.wheels?.[key]?.luminance, -50, 50),
   }]));
+  settings.mask = cleanMask(input.mask);
   return settings;
 }
 
@@ -91,6 +93,7 @@ function curveTable(points) {
 function luma(data, index) { return data[index] * .2126 + data[index + 1] * .7152 + data[index + 2] * .0722; }
 
 function processPixels(data, width, height, settings, offsetX, offsetY, fullWidth, fullHeight) {
+  const original = settings.maskRaster ? Uint8Array.from(data) : null;
   const curves = Object.fromEntries(['master', 'red', 'green', 'blue'].map(channel => [channel, curveTable(settings.curves[channel])]));
   const hslActive = bands.some(key => Object.values(settings.hsl[key]).some(Boolean));
   const wheelNames = ['shadows', 'midtones', 'highlights'];
@@ -193,6 +196,7 @@ function processPixels(data, width, height, settings, offsetX, offsetY, fullWidt
       for (let channel = 0; channel < 3; channel++) data[i + channel] = Math.max(0, Math.min(255, data[i + channel] + detail));
     }
   }
+  if (original) applyMask(data, original, settings.maskRaster, width, height, offsetX, offsetY, fullWidth, fullHeight);
 }
 
 async function readExact(handle, buffer, offset, length, position) {
@@ -225,6 +229,7 @@ async function renderTask(task) {
     if (sourceStats.size < rawLength) throw new Error('Data gambar tidak lengkap.');
     await destination.truncate(rawLength);
     const settings = cleanSettings(task.settings);
+    settings.maskRaster = buildMaskRaster(settings.mask, width, height);
     const tileHeight = 256, margin = 4;
     const maxTileWidth = Math.max(512, Math.floor((32 * 1024 * 1024) / ((tileHeight + margin * 2) * 4)) - margin * 2);
     const tileWidth = Math.min(width, maxTileWidth);

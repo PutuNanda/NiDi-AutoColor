@@ -41,6 +41,7 @@
     curves: Object.fromEntries(['master', 'red', 'green', 'blue'].map(key => [key, [{ x: 0, y: 0 }, { x: 1, y: 1 }]])),
     hsl: Object.fromEntries(bands.map(({ key }) => [key, { h: 0, s: 0, l: 0 }])),
     wheels: emptyWheels(),
+    mask: { strokes: [], inverted: false, brushSize: 72 },
   });
 
   let state = freshState();
@@ -69,6 +70,9 @@
   let controlIdCounter = 0;
   let selectedCurveChannel = 'master';
   let selectedHslBand = 'red';
+  let maskEditing = false;
+  let maskErasing = false;
+  let maskPointerId = -1;
 
   const fileInput = $('#file-input');
   const importButton = $('#import-button');
@@ -79,6 +83,8 @@
   const previewLoading = $('#preview-loading');
   const emptyState = $('#empty-state');
   const dropZone = $('#drop-zone');
+  const maskOverlay = $('#mask-overlay');
+  const maskContext = maskOverlay.getContext('2d');
   const dropOverlay = $('#drop-overlay');
   const zoomIndicator = $('#zoom-indicator');
   const status = $('#render-status');
@@ -89,6 +95,85 @@
   const wheelEditorClose = $('#wheel-editor-close');
   const expandedColorWheel = $('#expanded-color-wheel');
   let wheelEditorOpener = null;
+
+  function currentMask() {
+    if (!state.mask || typeof state.mask !== 'object') state.mask = { strokes: [], inverted: false, brushSize: 72 };
+    if (!Array.isArray(state.mask.strokes)) state.mask.strokes = [];
+    return state.mask;
+  }
+  function maskPointCount(mask = currentMask()) {
+    return mask.strokes.reduce((total, stroke) => total + (Array.isArray(stroke.points) ? stroke.points.length : 0), 0);
+  }
+  function drawMaskOverlay() {
+    const width = dropZone.clientWidth, height = dropZone.clientHeight;
+    if (!width || !height) return;
+    const scale = Math.min(2, window.devicePixelRatio || 1);
+    const pixelWidth = Math.max(1, Math.round(width * scale)), pixelHeight = Math.max(1, Math.round(height * scale));
+    if (maskOverlay.width !== pixelWidth || maskOverlay.height !== pixelHeight) {
+      maskOverlay.width = pixelWidth; maskOverlay.height = pixelHeight;
+    }
+    maskContext.setTransform(scale, 0, 0, scale, 0, 0);
+    maskContext.clearRect(0, 0, width, height);
+    const mask = currentMask();
+    if (!mask.strokes.length || isComparing || !imageId) return;
+    maskContext.save();
+    maskContext.fillStyle = 'rgba(255, 48, 64, .32)';
+    if (mask.inverted) maskContext.fillRect(0, 0, width, height);
+    for (const stroke of mask.strokes) {
+      if (!Array.isArray(stroke.points) || !stroke.points.length) continue;
+      const cutOut = mask.inverted ? !stroke.erase : stroke.erase;
+      maskContext.globalCompositeOperation = cutOut ? 'destination-out' : 'source-over';
+      maskContext.strokeStyle = 'rgba(255, 48, 64, .32)';
+      maskContext.fillStyle = 'rgba(255, 48, 64, .32)';
+      maskContext.lineCap = 'round'; maskContext.lineJoin = 'round';
+      maskContext.lineWidth = Math.max(1, Number(stroke.size) * width);
+      const first = stroke.points[0];
+      if (stroke.points.length === 1) {
+        maskContext.beginPath(); maskContext.arc(first.x * width, first.y * height, maskContext.lineWidth / 2, 0, Math.PI * 2); maskContext.fill();
+      } else {
+        maskContext.beginPath(); maskContext.moveTo(first.x * width, first.y * height);
+        for (let i = 1; i < stroke.points.length; i++) maskContext.lineTo(stroke.points[i].x * width, stroke.points[i].y * height);
+        maskContext.stroke();
+      }
+    }
+    maskContext.restore();
+  }
+  function updateMaskControls() {
+    const mask = currentMask(), hasPhoto = Boolean(imageId), hasMask = mask.strokes.length > 0;
+    const paint = $('#mask-paint-toggle'), eraser = $('#mask-eraser-toggle'), invert = $('#mask-invert-toggle');
+    paint.disabled = !hasPhoto; eraser.disabled = !hasPhoto; invert.disabled = !hasMask;
+    paint.classList.toggle('is-active', maskEditing && !maskErasing);
+    eraser.classList.toggle('is-active', maskEditing && maskErasing);
+    invert.classList.toggle('is-active', Boolean(mask.inverted));
+    paint.setAttribute('aria-pressed', String(maskEditing && !maskErasing));
+    eraser.setAttribute('aria-pressed', String(maskEditing && maskErasing));
+    invert.setAttribute('aria-pressed', String(Boolean(mask.inverted)));
+    $('#mask-brush-size').disabled = !hasPhoto;
+    $('#mask-brush-size').value = String(mask.brushSize || 72);
+    updateRangeFill($('#mask-brush-size'));
+    $('#mask-brush-value').value = `${mask.brushSize || 72} px`;
+    $('#mask-undo').disabled = !hasMask;
+    $('#mask-clear').disabled = !hasMask;
+    $('#mask-count').textContent = hasMask ? `${mask.strokes.length} STROKE${mask.strokes.length === 1 ? '' : 'S'}` : 'NO MASK';
+    $('#mask-help').textContent = !hasPhoto ? 'Impor foto untuk membuat mask. Posisi kuas mengikuti proporsi foto.'
+      : hasMask ? 'Area merah menerima penyesuaian. Balik mask untuk menerapkannya di luar area cat.'
+        : 'Cat area terlebih dahulu. Tanpa mask, penyesuaian berlaku ke seluruh foto.';
+    maskOverlay.hidden = !hasPhoto;
+    dropZone.classList.toggle('is-mask-editing', maskEditing && hasPhoto && !isComparing);
+    drawMaskOverlay();
+  }
+  function setMaskEditing(enabled, erase = false) {
+    if (enabled && !imageId) { showToast('Impor foto terlebih dahulu untuk membuat mask.'); return; }
+    maskEditing = enabled; maskErasing = enabled && erase;
+    updateMaskControls();
+  }
+  function maskPoint(event) {
+    const rect = maskOverlay.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(1, (event.clientX - rect.left) / Math.max(1, rect.width))),
+      y: Math.max(0, Math.min(1, (event.clientY - rect.top) / Math.max(1, rect.height))),
+    };
+  }
 
   function setPath(path, value) {
     const keys = path.split('.');
@@ -438,6 +523,7 @@
     dropZone.style.aspectRatio = `${photoWidth} / ${photoHeight}`;
     if (oldWidth && oldHeight) { panX *= width / oldWidth; panY *= height / oldHeight; }
     updatePreviewTransform();
+    updateMaskControls();
   }
   function resetCanvasView() {
     if (!imageId) return;
@@ -461,6 +547,9 @@
   function updatePreviewTransform() {
     preview.style.transformOrigin = '50% 50%';
     preview.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
+    maskOverlay.style.transformOrigin = '50% 50%';
+    maskOverlay.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
+    drawMaskOverlay();
   }
   function queuePreview() {
     if (!imageId || isComparing) return;
@@ -530,6 +619,7 @@
       previewLoading.querySelector('strong').textContent = 'Menerapkan edit di perangkat…'; previewLoading.hidden = true;
       exportButton.disabled = false; compareButton.disabled = false; $('#reset-view-button').disabled = false; $('#reset-button').disabled = false;
       buildControls(); setStatus('Foto dibuka di perangkat');
+      maskEditing = false; maskErasing = false; updateMaskControls();
       queuePreview(0);
     } catch (error) {
       if (activeImport === importNumber) { setStatus('Impor gagal'); showToast(error.message); }
@@ -565,10 +655,11 @@
       if (previewQueued) { previewQueued = false; queuePreview(); }
     }
   }
-  function resetEdits() { state = freshState(); pendingTemplate = false; buildControls(); queuePreview(); }
+  function resetEdits() { state = freshState(); pendingTemplate = false; maskEditing = false; maskErasing = false; buildControls(); updateMaskControls(); queuePreview(); }
   function toggleCompare(active) {
     if (!imageId || isComparing === active) return;
     isComparing = active; compareButton.classList.toggle('is-active', active);
+    updateMaskControls();
     if (active) {
       clearTimeout(previewTimer); previewTimer = 0;
       if (previewFrame) cancelAnimationFrame(previewFrame); previewFrame = 0;
@@ -662,6 +753,58 @@
   };
   dropZone.addEventListener('pointerup', stopPanning);
   dropZone.addEventListener('pointercancel', stopPanning);
+  maskOverlay.addEventListener('pointerdown', event => {
+    if (!maskEditing || !imageId || isComparing || event.button !== 0) return;
+    event.preventDefault(); event.stopPropagation();
+    const mask = currentMask();
+    if (mask.strokes.length >= 400) { showToast('Mask dapat berisi maksimal 400 goresan.'); return; }
+    if (maskPointCount(mask) >= 5000) { showToast('Mask dapat berisi maksimal 5.000 titik kuas.'); return; }
+    const point = maskPoint(event);
+    const width = Math.max(1, dropZone.clientWidth);
+    mask.strokes.push({ erase: maskErasing, size: Math.max(1, Number(mask.brushSize) || 72) / width, points: [point] });
+    maskPointerId = event.pointerId;
+    maskOverlay.setPointerCapture(event.pointerId);
+    updateMaskControls();
+  });
+  maskOverlay.addEventListener('pointermove', event => {
+    if (maskPointerId !== event.pointerId) return;
+    const points = currentMask().strokes.at(-1)?.points;
+    if (!points?.length) return;
+    const point = maskPoint(event), previous = points.at(-1), rect = maskOverlay.getBoundingClientRect();
+    const dx = (point.x - previous.x) * rect.width, dy = (point.y - previous.y) * rect.height;
+    if (dx * dx + dy * dy < 2.25) return;
+    if (points.length < 512 && maskPointCount() < 5000) points.push(point);
+    else points[points.length - 1] = point;
+    drawMaskOverlay();
+  });
+  const finishMaskStroke = event => {
+    if (maskPointerId !== event.pointerId) return;
+    maskPointerId = -1;
+    updateMaskControls();
+    queuePreview();
+  };
+  maskOverlay.addEventListener('pointerup', finishMaskStroke);
+  maskOverlay.addEventListener('pointercancel', finishMaskStroke);
+  $('#mask-paint-toggle').addEventListener('click', () => setMaskEditing(!(maskEditing && !maskErasing), false));
+  $('#mask-eraser-toggle').addEventListener('click', () => setMaskEditing(!(maskEditing && maskErasing), true));
+  $('#mask-invert-toggle').addEventListener('click', () => {
+    const mask = currentMask(); if (!mask.strokes.length) return;
+    mask.inverted = !mask.inverted; updateMaskControls(); queuePreview();
+  });
+  $('#mask-brush-size').addEventListener('input', event => {
+    const size = Number(event.currentTarget.value);
+    currentMask().brushSize = size;
+    $('#mask-brush-value').value = `${size} px`;
+  });
+  $('#mask-undo').addEventListener('click', () => {
+    currentMask().strokes.pop();
+    if (!currentMask().strokes.length) currentMask().inverted = false;
+    updateMaskControls(); queuePreview();
+  });
+  $('#mask-clear').addEventListener('click', () => {
+    currentMask().strokes = []; currentMask().inverted = false;
+    updateMaskControls(); queuePreview();
+  });
   window.addEventListener('resize', fitCanvasToViewport);
   document.addEventListener('dragover', event => event.preventDefault());
   document.addEventListener('drop', event => event.preventDefault());
@@ -680,6 +823,11 @@
       curves: { ...defaults.curves, ...(source.curves || {}) },
       hsl: Object.fromEntries(bands.map(({ key }) => [key, { ...defaults.hsl[key], ...(source.hsl?.[key] || {}) }])),
       wheels: Object.fromEntries(['shadows', 'midtones', 'highlights'].map(key => [key, { ...defaults.wheels[key], ...(source.wheels?.[key] || {}) }])),
+      mask: {
+        ...defaults.mask,
+        ...(source.mask || {}),
+        strokes: Array.isArray(source.mask?.strokes) ? source.mask.strokes : [],
+      },
     };
   }
 
@@ -691,9 +839,11 @@
       isComparing = false;
       compareButton.classList.remove('is-active');
       state = cloneTemplateState(settings);
+      maskEditing = false; maskErasing = false;
       pendingTemplate = !imageId;
       if (['png', 'jpg', 'jpeg'].includes(outputFormat)) exportFormat.value = outputFormat;
       buildControls();
+      updateMaskControls();
       if (imageId) { setStatus(`Template applied: ${name}`); queuePreview(); }
       else setStatus(`Template loaded: ${name}. Import a photo to apply it.`);
       showToast(`Template “${name}” applied.`);
@@ -701,4 +851,5 @@
   };
 
   buildControls();
+  updateMaskControls();
 })();

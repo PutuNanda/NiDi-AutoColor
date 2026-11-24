@@ -5,6 +5,7 @@ const { pipeline } = require('node:stream/promises');
 const { randomUUID } = require('node:crypto');
 const sharp = require('sharp');
 const automaticRenderer = require('./Automatic_Processing/auto_render');
+const { cleanMask, buildMaskRaster, applyMask } = require('./Automatic_Processing/masking');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -94,6 +95,7 @@ function cleanSettings(input = {}) {
   out.curves = Object.fromEntries(['master', 'red', 'green', 'blue'].map(channel => [channel, cleanCurve(inputCurves[channel] || (channel === 'master' ? input.curve : null))]));
   out.hsl = Object.fromEntries(bands.map(b => [b, { h: clamp(input.hsl?.[b]?.h,-100,100), s: clamp(input.hsl?.[b]?.s,-100,100), l: clamp(input.hsl?.[b]?.l,-100,100) }]));
   out.wheels = Object.fromEntries(['shadows','midtones','highlights'].map(k => [k, { hue: clamp(input.wheels?.[k]?.hue,0,360), amount: clamp(input.wheels?.[k]?.amount,0,1), luminance: clamp(input.wheels?.[k]?.luminance,-50,50) }]));
+  out.mask = cleanMask(input.mask);
   return out;
 }
 function smooth(a,b,x) { const t = Math.max(0,Math.min(1,(x-a)/(b-a || 1))); return t*t*(3-2*t); }
@@ -124,6 +126,7 @@ function histogramHeader(data) {
 }
 function luma(data,i){return data[i]*.2126+data[i+1]*.7152+data[i+2]*.0722;}
 function processPixels(data,w,h,s) {
+  const original=s.maskRaster?Uint8Array.from(data):null;
   const curves=Object.fromEntries(['master','red','green','blue'].map(channel=>[channel,curveTable(s.curves[channel])]));
   const hslActive=bands.some(k=>Object.values(s.hsl[k]).some(Boolean));
   const wheelNames=['shadows','midtones','highlights'];
@@ -167,12 +170,15 @@ function processPixels(data,w,h,s) {
       const d=tex*(c-near/Math.max(1,nc))+clear*(c-far/Math.max(1,fc));for(let ch=0;ch<3;ch++)data[i+ch]=Math.max(0,Math.min(255,data[i+ch]+d));
     }
   }
+  if(original)applyMask(data,original,s.maskRaster,w,h,0,0,w,h);
 }
 async function rawImage(item) {
   return sharp(item.buffer,{limitInputPixels:MAX_PIXELS,failOn:'warning'}).rotate().ensureAlpha().raw().toBuffer({resolveWithObject:true});
 }
 async function render(item, settings, preview, format) {
-  const {data,info}=await rawImage(item), pixels=Buffer.from(data); processPixels(pixels,info.width,info.height,cleanSettings(settings));
+  const {data,info}=await rawImage(item), pixels=Buffer.from(data), cleaned=cleanSettings(settings);
+  cleaned.maskRaster=buildMaskRaster(cleaned.mask,info.width,info.height);
+  processPixels(pixels,info.width,info.height,cleaned);
   const histogram=preview?histogramHeader(pixels):undefined;
   let output=sharp(pixels,{raw:{width:info.width,height:info.height,channels:info.channels}});
   if(format==='jpeg')output=output.flatten({background:'#11110f'}).jpeg({quality:94,mozjpeg:true});
@@ -191,7 +197,7 @@ async function listTemplates() {
     try{
       const filename=path.join(TEMPLATE_DIR,entry.name);
       const stats=await fs.promises.stat(filename);
-      if(stats.size>256*1024)continue;
+      if(stats.size>8*1024*1024)continue;
       const data=JSON.parse(await fs.promises.readFile(filename,'utf8'));
       const name=templateName(data.name);
       if(`${name}.nd`.toLowerCase()!==entry.name.toLowerCase()||!data.settings||typeof data.settings!=='object'||Array.isArray(data.settings))continue;
@@ -209,7 +215,7 @@ async function migrateLegacyTemplates() {
     try{
       const source=path.join(TEMPLATE_DIR,entry.name);
       const stats=await fs.promises.stat(source);
-      if(stats.size>256*1024)continue;
+      if(stats.size>8*1024*1024)continue;
       const data=JSON.parse(await fs.promises.readFile(source,'utf8'));
       const name=templateName(data.name);
       if(`${name}.json`.toLowerCase()!==entry.name.toLowerCase()||!data.settings||typeof data.settings!=='object'||Array.isArray(data.settings))continue;
@@ -221,7 +227,7 @@ async function migrateLegacyTemplates() {
 }
 async function importTemplates(input) {
   const rawTemplates=Array.isArray(input)?input:Array.isArray(input?.templates)?input.templates:[input];
-  if(!rawTemplates.length||rawTemplates.length>100)throw Object.assign(new Error('File harus berisi 1–100 template.'),{status:400});
+  if(!rawTemplates.length||rawTemplates.length>1000)throw Object.assign(new Error('File harus berisi 1–1.000 template.'),{status:400});
   const staged=[];const seen=new Set();
   for(const raw of rawTemplates){
     if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Object.assign(new Error('Data template tidak valid.'),{status:400});
@@ -386,7 +392,7 @@ async function api(req,res,url) {
   }
   if(req.method==='POST'&&url==='/api/templates'){
     let body;
-    try{body=JSON.parse((await readBody(req,256*1024)).toString());}
+    try{body=JSON.parse((await readBody(req,8*1024*1024)).toString());}
     catch(error){return json(res,error.status||400,{error:'Data template tidak valid.'});}
     if(!body||typeof body!=='object'||Array.isArray(body))return json(res,400,{error:'Data template tidak valid.'});
     const name=templateName(body.name);
@@ -402,7 +408,7 @@ async function api(req,res,url) {
   }
   if(req.method==='POST'&&url==='/api/templates/import'){
     let body;
-    try{body=JSON.parse((await readBody(req,2*1024*1024)).toString());}
+    try{body=JSON.parse((await readBody(req,64*1024*1024)).toString());}
     catch(error){return json(res,error.status||400,{error:'File .nd tidak berisi JSON template yang valid.'});}
     try{return json(res,201,{templates:await importTemplates(body)});}
     catch(error){return json(res,error.status||400,{error:error.status?error.message:'Template tidak dapat diimpor.'});}

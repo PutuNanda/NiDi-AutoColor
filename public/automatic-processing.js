@@ -70,6 +70,13 @@
       checkbox.checked = savedNames.has(template.name);
       const name = document.createElement('span'); name.textContent = template.name;
       label.append(checkbox, name);
+      if (template.settings?.mask?.strokes?.length) {
+        const maskBadge = document.createElement('small');
+        maskBadge.className = 'automatic-template-mask-badge';
+        maskBadge.textContent = 'MASK';
+        maskBadge.title = 'Template ini menyertakan area mask.';
+        label.append(maskBadge);
+      }
       list.append(label);
     }
     syncActions();

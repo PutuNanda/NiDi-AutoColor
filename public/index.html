@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/soft-theme.css">
   <link rel="stylesheet" href="/navigation.css">
   <link rel="stylesheet" href="/templates.css">
+  <link rel="stylesheet" href="/masking.css">
   <script src="/render.js" defer></script>
   <script src="/script.js" defer></script>
   <script src="/navigation.js" defer></script>
@@ -40,6 +41,7 @@
         </div>
         <div id="drop-zone" class="photo-stage">
           <img id="photo-preview" alt="Pratinjau foto yang telah diedit" draggable="false" hidden>
+          <canvas id="mask-overlay" aria-label="Area mask pada foto" hidden></canvas>
           <div id="preview-loading" class="preview-loading" role="status" aria-live="polite" hidden><span class="loading-spinner" aria-hidden="true"></span><strong>Menyiapkan pratinjau lokal...</strong><small>Tunggu sebentar untuk melihat pratinjau.</small></div>
           <div id="zoom-indicator" class="zoom-indicator" hidden><strong>100%</strong><span>Scroll untuk zoom &middot; tarik foto untuk geser</span></div>
           <div id="empty-state" class="empty-state">
@@ -60,6 +62,7 @@
           <button class="tab-button is-active" id="tab-basic" role="tab" aria-selected="true" aria-controls="panel-basic" data-tab="basic">Dasar</button>
           <button class="tab-button" id="tab-hsl" role="tab" aria-selected="false" aria-controls="panel-hsl" data-tab="hsl">HSL</button>
           <button class="tab-button" id="tab-curves" role="tab" aria-selected="false" aria-controls="panel-curves" data-tab="curves">Kurva</button>
+          <button class="tab-button" id="tab-mask" role="tab" aria-selected="false" aria-controls="panel-mask" data-tab="mask">Mask</button>
           <button class="tab-button" id="tab-color" role="tab" aria-selected="false" aria-controls="panel-color" data-tab="color">Color wheel</button>
         </div>
         <div class="panels-scroll">
@@ -69,7 +72,25 @@
           </section>
           <section class="tab-panel" id="panel-hsl" role="tabpanel" aria-labelledby="tab-hsl" hidden><div class="panel-section"><div class="subheading"><div><span class="section-index">03</span><h3>Campuran warna</h3></div><span class="section-note">HUE / SAT / LUM</span></div><p class="panel-intro">Pilih satu warna untuk menampilkan kontrol HSL-nya.</p><div id="hsl-swatches" class="hsl-swatches" role="group" aria-label="Pilih rentang warna"></div><div id="hsl-selected" class="hsl-selected"></div><div id="hsl-controls" class="control-list hsl-selected-controls"></div></div></section>
           <section class="tab-panel" id="panel-curves" role="tabpanel" aria-labelledby="tab-curves" hidden><div class="panel-section"><div class="subheading"><div><span class="section-index">04</span><h3>Kurva tonal</h3></div><button id="reset-curve" class="text-button" type="button">Reset channel</button></div><p class="panel-intro">Klik garis untuk menambah titik. Tarik untuk mengatur tonal; klik kanan atau klik dua kali untuk menghapus.</p><div id="curve-channels" class="channel-selector" role="group" aria-label="Pilih channel kurva"><button type="button" class="channel-button is-active" data-channel="master" aria-label="Master RGB" title="Master RGB"><i class="channel-master"></i></button><button type="button" class="channel-button" data-channel="red" aria-label="Red" title="Red"><i class="channel-red"></i></button><button type="button" class="channel-button" data-channel="green" aria-label="Green" title="Green"><i class="channel-green"></i></button><button type="button" class="channel-button" data-channel="blue" aria-label="Blue" title="Blue"><i class="channel-blue"></i></button></div><div class="curve-frame"><svg id="curve-editor" viewBox="0 0 280 280" role="application" aria-label="Kurva tonal 4 kali 4. Klik untuk menambah titik dan tarik untuk mengubah kurva." tabindex="0"><g class="curve-grid"><path d="M20 20H260M20 80H260M20 140H260M20 200H260M20 260H260M20 20V260M80 20V260M140 20V260M200 20V260M260 20V260"/></g><polygon id="histogram-area" points=""/><path class="curve-diagonal" d="M20 260L260 20"/><polyline id="curve-line" points=""></polyline><g id="curve-points"></g></svg></div><div class="curve-axis"><span>BLACK</span><span>INPUT</span><span>WHITE</span></div></div></section>
-          <section class="tab-panel" id="panel-color" role="tabpanel" aria-labelledby="tab-color" hidden><div class="panel-section"><div class="subheading"><div><span class="section-index">05</span><h3>Color grading</h3></div><span class="section-note">3-WAY</span></div><p class="panel-intro">Pilih warna pada roda untuk tiap rentang tonal.</p><div id="wheel-controls" class="wheel-list"></div></div></section>
+          <section class="tab-panel" id="panel-mask" role="tabpanel" aria-labelledby="tab-mask" hidden>
+            <div class="panel-section">
+              <div class="subheading"><div><span class="section-index">05</span><h3>Masking</h3></div><span id="mask-count" class="section-note">NO MASK</span></div>
+              <p class="panel-intro">Cat area pada foto. Jika mask sudah dibuat, semua penyesuaian diterapkan hanya di dalam area itu. Mask ikut tersimpan di template dan dipakai Automatic Processing.</p>
+              <div class="mask-tool-grid">
+                <button id="mask-paint-toggle" class="button button-quiet" type="button" aria-pressed="false" disabled>Kuas mask</button>
+                <button id="mask-eraser-toggle" class="button button-quiet" type="button" aria-pressed="false" disabled>Penghapus</button>
+                <button id="mask-invert-toggle" class="button button-quiet" type="button" aria-pressed="false" disabled>Balik mask</button>
+              </div>
+              <label class="mask-size-control" for="mask-brush-size"><span>Ukuran kuas</span><output id="mask-brush-value" for="mask-brush-size">72 px</output></label>
+              <input id="mask-brush-size" class="range mask-size-range" type="range" min="8" max="240" step="2" value="72" disabled>
+              <div class="mask-tool-grid mask-history-actions">
+                <button id="mask-undo" class="button button-quiet" type="button" disabled>Urungkan goresan</button>
+                <button id="mask-clear" class="button button-quiet" type="button" disabled>Hapus mask</button>
+              </div>
+              <p id="mask-help" class="mask-help" aria-live="polite">Impor foto untuk membuat mask. Posisi kuas mengikuti proporsi foto.</p>
+            </div>
+          </section>
+          <section class="tab-panel" id="panel-color" role="tabpanel" aria-labelledby="tab-color" hidden><div class="panel-section"><div class="subheading"><div><span class="section-index">06</span><h3>Color grading</h3></div><span class="section-note">3-WAY</span></div><p class="panel-intro">Pilih warna pada roda untuk tiap rentang tonal.</p><div id="wheel-controls" class="wheel-list"></div></div></section>
         </div>
         <div class="panel-bottom"><span class="bottom-mark">N</span><span>Color grading yang terasa milikmu.</span><span class="bottom-version">v1.0</span></div>
       </aside>

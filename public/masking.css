@@ -1,0 +1,16 @@
+.tab-list { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+#mask-overlay { position: absolute; z-index: 2; inset: 0; display: block; width: 100%; height: 100%; transform-origin: 50% 50%; pointer-events: none; }
+#mask-overlay[hidden] { display: none; }
+.photo-stage.is-mask-editing #mask-overlay { pointer-events: auto; cursor: crosshair; touch-action: none; }
+.photo-stage.is-mask-editing { cursor: crosshair; }
+#zoom-indicator { z-index: 3; }
+.mask-tool-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 12px 0; }
+.mask-tool-grid .button { height: 34px; min-width: 0; padding: 0 7px; font-size: 10px; }
+.mask-tool-grid .button.is-active { border-color: #a0c454; background: #29331c; color: #dcf29f; }
+.mask-size-control { display: flex; align-items: center; justify-content: space-between; margin: 16px 0 6px; color: #b6bbb1; font-size: 10px; }
+.mask-size-control output { color: #d3d7ce; font: 10px var(--mono); }
+.mask-size-range { display: block; }
+.mask-history-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mask-help { min-height: 28px; margin: 12px 0 0; color: #858b80; font: 9px/1.5 var(--mono); }
+.automatic-template-mask-badge { margin-left: auto; border: 1px solid #596b37; border-radius: 3px; padding: 3px 5px; color: #d5ed8e; font: 8px var(--mono); letter-spacing: .7px; }
+@media (max-width: 410px) { .mask-tool-grid { gap: 5px; } .mask-tool-grid .button { font-size: 9px; } }

@@ -76,7 +76,8 @@
 
     const description = document.createElement('p');
     description.className = 'template-card-description';
-    description.textContent = `Color settings · ${String(template.outputFormat || 'png').toUpperCase()} output`;
+    const hasMask = Boolean(template.settings?.mask?.strokes?.length);
+    description.textContent = `Color settings · ${String(template.outputFormat || 'png').toUpperCase()} output${hasMask ? ' · Mask included' : ''}`;
 
     const actions = document.createElement('div');
     actions.className = 'template-card-actions';
